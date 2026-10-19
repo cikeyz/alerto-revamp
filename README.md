@@ -26,7 +26,7 @@ VL53L8CX ─ ESP32-S3 node (Node ID) ──Wi-Fi──▶ Raspberry Pi gateway �
 
 | Item | Deliverable (Section 2.1) | Status |
 |---|---|---|
-| (a) | ESP32-S3 sensor node with VL53L8CX, Node ID in every message | ✅ Done (firmware); hardware power to be stabilised for the demo |
+| (a) | ESP32-S3 sensor node with VL53L8CX, Node ID in every message | ✅ Done |
 | (b) | Raspberry Pi gateway: receive, process, store, send to dashboard, diorama output | ✅ Done |
 | (b) | Communication and message format documented | ⚠️ Partly done (summary below; full protocol document ⏳ not yet done) |
 | (c) | Dashboard: live readings, Node ID, crowd level, alerts/gating state | ✅ Done |
@@ -74,9 +74,6 @@ VL53L8CX ─ ESP32-S3 node (Node ID) ──Wi-Fi──▶ Raspberry Pi gateway �
 - Power up with the area under the sensor empty; the gateway learns the empty floor from the first ~30 frames.
 - Serial Monitor (115200 baud) shows the restart reason, an I2C scan, start-up steps and a status line every
   second. Type `g` for the 8×8 grid, `v` to toggle the status line.
-
-**Power:** use a short USB data cable on a direct or powered port, and a 470–1000 µF capacitor across 3V3
-and GND. A weak supply causes `BROWNOUT_RST` resets (see Known issues).
 
 ---
 
@@ -168,9 +165,6 @@ interval, data retention, language.
 ---
 
 ## Known issues
-- **Node brownouts on USB power.** The ESP32-S3 resets (`BROWNOUT_RST`) when Wi-Fi and the sensor draw
-  current together on a weak USB supply. The firmware staggers start-up and runs the sensor in low-power mode;
-  a good cable/port and a 470–1000 µF capacitor are still recommended.
 - **Clock without internet.** Without the Pi 5 RTC battery, timestamps are wrong after a power-off until the
   Pi is connected to the internet once.
 - **Counts are estimates.** People standing very close together can merge into one shape and be undercounted.
