@@ -1,0 +1,863 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Station Command Dashboard</title>
+<style>
+  :root {
+    --bg: #F7F8FB; --card: #F9FAFD; --white: #FFFFFF; --ink: #1A1F29; --text: #2B3442; --muted: #5E6878;
+    --line: #CDD3DC; --line-soft: #E3E7ED; --primary: #2563EB; --primary-ink: #FFFFFF;
+    --low: #3E9B47;  --low-bg: #E4F7E9;  --low-line: #59B463;
+    --mod: #D9781E;  --mod-bg: #FDF0C7;  --mod-line: #E0913C;
+    --high: #D63A2F; --high-bg: #FCE3E3; --high-line: #E2564C;
+    --none: #7B8494; --none-bg: #EEF0F4;
+    --seg-a: #2563EB; --seg-b: #9333EA; --seg-c: #0F9488; --seg-d: #DB2777; --avg: #334155;
+    --font: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var(--font); }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+  .num { font-variant-numeric: tabular-nums; }
+  [hidden] { display: none !important; }
+
+  /* header + tabs */
+  header.top { background: var(--white); border-bottom: 1px solid var(--line); }
+  .bar { max-width: 1240px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; gap: 18px; min-height: 76px; }
+  .bar h1 { font-size: 24px; font-weight: 700; color: var(--ink); margin: 0; white-space: nowrap; }
+  .bar .where { color: var(--muted); padding-left: 18px; border-left: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar .icons { margin-left: auto; display: flex; gap: 14px; }
+  .icon-btn { background: none; border: 0; padding: 6px; cursor: pointer; color: var(--muted); border-radius: 6px; display: inline-flex; }
+  .icon-btn:hover { color: var(--ink); }
+  nav.tabs { background: var(--white); border-bottom: 1px solid var(--line); }
+  nav.tabs .inner { max-width: 1240px; margin: 0 auto; padding: 0 24px; display: flex; gap: 6px; overflow-x: auto; }
+  nav.tabs a { padding: 20px 12px 18px; color: var(--muted); text-decoration: none; border-bottom: 3px solid transparent; white-space: nowrap; font-size: 16px; }
+  nav.tabs a[aria-current="page"] { color: var(--primary); font-weight: 700; border-bottom-color: var(--primary); }
+
+  main { max-width: 1240px; margin: 0 auto; padding: 18px 24px 30px; }
+  .updated { text-align: right; color: var(--muted); font-size: 15px; margin: 6px 0 16px; }
+  .updated .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--low); margin-right: 6px; }
+  .updated .dot.stale { background: var(--none); }
+  .notice { border: 1px solid var(--mod-line); background: var(--mod-bg); color: var(--ink); padding: 10px 14px; margin-bottom: 16px; }
+
+  .card { background: var(--card); border: 1px solid var(--line); padding: 22px 28px 26px; margin-bottom: 26px; }
+  .card > h2, .card .h2row { font-size: 20px; font-weight: 700; color: var(--ink); margin: 0 0 16px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+  .h2row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .h2row h2 { font-size: 20px; margin: 0; }
+  .h2row .side { font-size: 15px; font-weight: 400; color: var(--muted); }
+  .row { display: grid; gap: 26px; }
+  .row.r-1-2 { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+  .row.r-1-1 { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .row > .card { margin-bottom: 26px; }
+  .label { font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .03em; text-transform: uppercase; margin: 18px 0 8px; }
+  .label:first-of-type { margin-top: 0; }
+
+  /* level boxes */
+  .lvlbox { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 20px; border: 2px solid; font-weight: 700; }
+  .lvlbox .big { font-size: 28px; }
+  .lv-low { color: var(--low); background: var(--low-bg); border-color: var(--low-line); }
+  .lv-moderate { color: var(--mod); background: var(--mod-bg); border-color: var(--mod-line); }
+  .lv-high { color: var(--high); background: var(--high-bg); border-color: var(--high-line); }
+  .lv-unknown { color: var(--none); background: var(--none-bg); border-color: var(--line); }
+  .t-low { color: var(--low); } .t-moderate { color: var(--mod); } .t-high { color: var(--high); } .t-unknown { color: var(--none); }
+  .alertlist { display: grid; gap: 8px; }
+  .alertlist .lvlbox { font-size: 15px; padding: 12px 16px; justify-content: flex-start; }
+  .alertlist .lvlbox small { display: block; font-weight: 400; color: var(--text); margin-top: 2px; }
+  .kv { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .kv:last-child { border-bottom: 0; }
+  .pill { border: 1px solid var(--line); background: var(--white); padding: 6px 12px; font-size: 15px; white-space: nowrap; }
+
+  /* density map */
+  .map { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  .tile { border: 2px solid; border-left-width: 5px; padding: 12px 14px 14px; }
+  .tile .thead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .tile .seg { font-weight: 700; font-size: 16px; letter-spacing: .03em; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .tile .seg svg { width: 18px; height: 18px; }
+  .tile .pct { font-weight: 700; font-size: 22px; line-height: 1; }
+  .tile .lv { font-size: 14px; font-weight: 600; }
+  .tile .ppl { font-size: 13px; color: var(--muted); margin-top: 8px; display: flex; justify-content: space-between; gap: 8px; }
+  .grid8 { position: relative; display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; cursor: pointer; }
+  .grid8 i { aspect-ratio: 1; border-radius: 3px; background: #E2E6EC; display: flex; align-items: center; justify-content: center;
+    font: 600 10px/1 var(--font); font-style: normal; color: transparent; transition: background-color .12s; }
+  .grid8.nums i { color: #3B4452; }
+  .grid8 i.occ { color: transparent; }
+  .grid8.nums i.occ { color: #fff; }
+  .grid8 i.bad { background: transparent; box-shadow: inset 0 0 0 1px #C9CFD8; }
+  .grid8 .over { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+    background: rgba(247, 248, 251, .82); color: var(--muted); font-weight: 600; font-size: 14px; padding: 8px; }
+  @media (prefers-reduced-motion: reduce) { .grid8 i { transition: none; } }
+  .sensors { margin-top: 22px; border: 1px solid var(--line); background: var(--white); padding: 14px 20px; }
+  .sensors .label { margin-top: 0; padding-bottom: 8px; border-bottom: 1px solid var(--line-soft); }
+  .srow { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; font-size: 15px; }
+  .sdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; background: var(--none); }
+  .sdot.on { background: var(--low); }
+
+  /* charts */
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 15px; color: var(--text); }
+  .legend span::before { content: ""; display: inline-block; width: 13px; height: 13px; border-radius: 50%; background: var(--c); margin-right: 6px; vertical-align: -2px; }
+  .legend.center { justify-content: center; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .chartbox { position: relative; }
+  canvas { width: 100%; display: block; touch-action: pan-y; }
+  .tip { position: absolute; top: 8px; pointer-events: none; background: var(--ink); color: #fff; font-size: 13px; padding: 7px 10px;
+    transform: translateX(-50%); display: none; line-height: 1.4; white-space: nowrap; z-index: 2; }
+  .empty { text-align: center; color: var(--muted); padding: 34px 10px; }
+  .empty svg { display: block; margin: 0 auto 12px; }
+
+  .alertbar { display: flex; gap: 14px; align-items: flex-start; border: 1px solid var(--high-line); border-left: 5px solid var(--high);
+    background: var(--high-bg); padding: 14px 20px; margin-top: 16px; color: var(--ink); }
+  .alertbar.warn { border-color: var(--mod-line); border-left-color: var(--mod); background: var(--mod-bg); }
+  .alertbar b { display: block; font-size: 16px; }
+  .alertbar p { margin: 4px 0 0; }
+
+  .commuter { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+  .commuter .mega { width: 66px; height: 66px; border: 2px solid var(--low-line); background: var(--low-bg); color: var(--low); border-radius: 10px;
+    display: flex; align-items: center; justify-content: center; flex: none; }
+  .commuter .txt { flex: 1 1 260px; }
+  .commuter .txt b { font-size: 20px; color: var(--ink); display: block; }
+  .commuter .txt span { color: var(--muted); font-size: 17px; }
+  .commuter .zone { border: 1px solid var(--line); background: var(--white); padding: 14px 26px; display: flex; align-items: baseline; gap: 16px; white-space: nowrap; }
+  .commuter .zone .z { font-weight: 700; color: var(--muted); }
+  .commuter .zone .p { font-size: 28px; font-weight: 700; }
+  .disclaimer { text-align: center; color: var(--muted); font-size: 14px; margin-top: -8px; }
+
+  /* tables */
+  .filters { display: flex; gap: 28px; align-items: flex-end; flex-wrap: wrap; }
+  .field label { display: block; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 8px; }
+  .field input, .field select { border: 1px solid var(--line); background: var(--white); padding: 11px 12px; min-width: 220px; }
+  .btn { border: 0; background: var(--primary); color: var(--primary-ink); font-weight: 700; padding: 13px 34px; cursor: pointer; font-size: 16px; }
+  .btn.secondary { background: var(--white); color: var(--text); border: 1px solid var(--line); font-weight: 400; }
+  .btn.small { padding: 8px 20px; font-size: 15px; }
+  .tablewrap { overflow-x: auto; margin: 0 -28px -26px; }
+  table.grid { width: 100%; border-collapse: collapse; font-size: 16px; }
+  table.grid th { background: #EEF1F6; text-align: left; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; padding: 16px 20px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.grid td { padding: 16px 20px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.grid tr:last-child td { border-bottom: 0; }
+  table.grid td.c-low { background: var(--low-bg); } table.grid td.c-moderate { background: var(--mod-bg); } table.grid td.c-high { background: var(--high-bg); }
+  table.grid td.sep, table.grid th.sep { border-left: 1px solid var(--line); }
+  table.grid td .muted { color: var(--muted); font-weight: 400; margin-left: 8px; }
+  table.grid tr.active td { background: #EEF2FD; color: var(--primary); font-weight: 700; }
+  table.plain { width: 100%; border-collapse: collapse; }
+  table.plain th { text-align: left; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; padding: 14px 20px; background: #EEF1F6; border-bottom: 1px solid var(--line); }
+  table.plain td { padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  table.plain td:first-child { font-weight: 700; color: var(--ink); }
+  table.plain tr.active td { background: #EEF2FD; color: var(--primary); font-weight: 700; }
+
+  /* forecast tab */
+  .mtabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); margin-bottom: 18px; overflow-x: auto; }
+  .mtabs button { background: none; border: 0; border-bottom: 3px solid transparent; padding: 10px 24px 12px; font-size: 18px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+  .mtabs button[aria-selected="true"] { color: var(--primary); font-weight: 700; border-bottom-color: var(--primary); }
+  .inuse { display: inline-block; margin-top: 12px; font-size: 14px; color: var(--primary); font-weight: 700; }
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 18px; }
+  .metric { border: 1px solid var(--line); background: #F1F3F8; padding: 18px 22px; }
+  .metric .k { color: var(--muted); font-size: 15px; }
+  .metric .v { font-size: 20px; font-weight: 700; margin-top: 4px; }
+  .metric .v.blue { color: var(--primary); }
+  .metric .v.orange { color: var(--mod); }
+  .reco { border: 2px solid var(--low-line); background: var(--low-bg); padding: 20px 26px; display: flex; gap: 18px; align-items: flex-start; }
+  .reco b { font-size: 20px; color: var(--ink); display: block; }
+  .reco span { font-weight: 700; font-size: 17px; }
+  .quote { border-left: 3px solid var(--primary); padding: 14px 0 14px 30px; margin-top: 26px; }
+  .quote b { font-size: 18px; color: var(--ink); display: block; }
+  .quote i { color: var(--muted); font-size: 17px; }
+  .exo { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 26px; }
+  .exo div.box { border: 1px solid var(--line); background: #F1F3F8; padding: 22px 28px; }
+  .exo .k { color: var(--muted); text-transform: uppercase; font-size: 15px; letter-spacing: .03em; }
+  .exo .v { font-weight: 700; color: var(--ink); font-size: 18px; margin-top: 8px; }
+  .exo .d { color: var(--muted); margin-top: 6px; }
+  .exo .d.orange { color: var(--mod); }
+  .note { color: var(--muted); font-size: 14px; margin: 14px 0 0; }
+
+  /* settings */
+  .settings-head h2 { font-size: 26px; color: var(--ink); margin: 6px 0 6px; }
+  .settings-head p { color: var(--muted); font-size: 17px; margin: 0 0 30px; }
+  .panel { border: 1px solid var(--line); background: var(--card); margin-bottom: 30px; }
+  .panel > h3 { margin: 0; padding: 20px 24px; font-size: 20px; color: var(--ink); background: #EEF1F6; border-bottom: 1px solid var(--line); }
+  .panel .body { padding: 26px 34px 30px; }
+  .panel table.plain th { background: transparent; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid; font-size: 15px; margin-left: 10px; }
+  .bdot { display: inline-block; width: 18px; height: 18px; border-radius: 50%; vertical-align: middle; }
+  .thr-input { width: 80px; padding: 6px 8px; border: 1px solid var(--line); background: var(--white); }
+  .form-grid { display: grid; gap: 22px; }
+  .form-grid label { display: block; font-weight: 700; font-size: 15px; letter-spacing: .02em; text-transform: uppercase; margin-bottom: 10px; color: var(--ink); }
+  .form-grid input, .form-grid select { width: 100%; padding: 16px 22px; border: 1px solid var(--line); background: var(--white); font-size: 17px; }
+  .form-grid .hint { font-size: 14px; color: var(--muted); margin-top: 6px; }
+  .check { display: flex; align-items: center; gap: 10px; font-size: 17px; }
+  .check input { width: 20px; height: 20px; }
+  .actions { display: flex; justify-content: flex-end; gap: 22px; flex-wrap: wrap; align-items: center; }
+  .actions input { padding: 15px 16px; border: 1px solid var(--line); background: var(--white); width: 170px; }
+  .msg { min-height: 1.4em; margin-top: 12px; text-align: right; }
+  .msg.err { color: var(--high); } .msg.ok { color: var(--low); }
+
+  footer.ver { border-top: 1px solid var(--line); background: #EEF1F6; }
+  footer.ver div { max-width: 1240px; margin: 0 auto; padding: 16px 24px; text-align: right; color: var(--muted); }
+
+  dialog { border: 1px solid var(--line); padding: 26px 30px; max-width: 560px; color: var(--text); }
+  dialog::backdrop { background: rgba(20, 26, 36, .35); }
+  dialog h3 { margin-top: 0; color: var(--ink); }
+
+  @media (max-width: 900px) {
+    .row.r-1-2, .row.r-1-1 { grid-template-columns: 1fr; gap: 0; }
+    .bar h1 { font-size: 20px; }
+  }
+  @media (max-width: 560px) {
+    .bar { padding: 0 16px; min-height: 64px; gap: 12px; }
+    .bar .where { display: none; }
+    nav.tabs .inner, main { padding-left: 16px; padding-right: 16px; }
+    .card { padding: 18px 16px 20px; }
+    .tablewrap { margin: 0 -16px -20px; }
+    .map { gap: 12px; }
+    .tile { padding: 10px 10px 12px; }
+    .tile .pct { font-size: 18px; }
+    .tile .thead { flex-direction: column; align-items: flex-start; gap: 2px; margin-bottom: 8px; }
+    .tile .ppl span:last-child { display: none; }
+    .grid8 { gap: 2px; }
+    .field input { min-width: 0; width: 100%; }
+    .field { flex: 1 1 100%; }
+    .panel .body { padding: 20px 16px; }
+    .commuter .zone { width: 100%; justify-content: center; }
+    .bar h1 { font-size: 17px; white-space: normal; }
+    .bar .icons { gap: 2px; }
+    .srow { flex-direction: column; gap: 0; }
+    .srow > span:last-child { padding-left: 17px; font-size: 14px; }
+  }
+  .srow > span:first-child { white-space: nowrap; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="bar">
+    <h1>Station Command Dashboard</h1>
+    <span class="where" id="where">Line 1 | Central Station</span>
+    <div class="icons">
+      <button class="icon-btn" id="go-settings" aria-label="Settings" title="Settings">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <button class="icon-btn" id="help" aria-label="Help" title="Help">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r=".6" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+<nav class="tabs" aria-label="Sections">
+  <div class="inner">
+    <a href="#dashboard" data-tab="dashboard">Dashboard</a>
+    <a href="#history" data-tab="history">History</a>
+    <a href="#forecast" data-tab="forecast">Forecast</a>
+    <a href="#settings" data-tab="settings">Settings</a>
+  </div>
+</nav>
+
+<main>
+  <div class="updated" id="updated"><span class="dot"></span>Connecting…</div>
+  <div class="notice" id="notice" hidden></div>
+
+  <!-- ===================== DASHBOARD ===================== -->
+  <section data-page="dashboard">
+    <div class="row r-1-2">
+      <div class="card">
+        <h2>Platform Status</h2>
+        <div class="label">Current density</div>
+        <div class="lvlbox lv-unknown" id="d-current"><span>NO DATA</span><span class="big num">—</span></div>
+        <div class="label">Alerts</div>
+        <div class="alertlist" id="d-alerts"></div>
+        <div class="label">Entry gate</div>
+        <div id="d-gate"></div>
+      </div>
+      <div class="card">
+        <h2>Platform Density Map</h2>
+        <div class="map" id="d-map"></div>
+        <p class="note" style="margin-top:12px">Live view from each ceiling sensor, seen from above. Coloured squares are people; grey shading shows height above the floor. Tap a grid to show heights in cm.</p>
+        <div class="sensors">
+          <div class="label">Sensors</div>
+          <div id="d-sensors"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="h2row"><h2>30-Minute Forecast</h2><div class="legend" id="d-legend"></div></div>
+      <div class="chartbox"><canvas id="d-chart" data-h="360"></canvas><div class="tip"></div></div>
+      <div id="d-fc-empty" class="empty" hidden></div>
+      <div id="d-fc-alert"></div>
+    </div>
+
+    <div class="card">
+      <div class="commuter">
+        <div class="mega" aria-hidden="true">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor"><path d="M3 10v4a1 1 0 0 0 1 1h2l5 4V5L6 9H4a1 1 0 0 0-1 1zm13.5 2a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>
+        </div>
+        <div class="txt"><b id="c-primary">—</b><span id="c-secondary"></span></div>
+        <div class="zone" id="c-zone" hidden><span class="z" id="c-zone-name">ZONE</span><span class="p num" id="c-zone-pct">—</span><span class="muted">occupancy</span></div>
+      </div>
+    </div>
+    <p class="disclaimer">Data provided is for operational guidance only. Real-time conditions may vary.</p>
+  </section>
+
+  <!-- ===================== HISTORY ===================== -->
+  <section data-page="history" hidden>
+    <div class="card">
+      <form class="filters" id="h-form">
+        <div class="field"><label for="h-start">Start date</label><input type="date" id="h-start" required></div>
+        <div class="field"><label for="h-end">End date</label><input type="date" id="h-end" required></div>
+        <button class="btn" type="submit">Apply Filters</button>
+      </form>
+    </div>
+    <div class="card">
+      <div class="h2row"><h2>Historical Density Trend</h2><div class="legend" id="h-legend"></div></div>
+      <div class="chartbox"><canvas id="h-chart" data-h="380"></canvas><div class="tip"></div></div>
+      <div id="h-empty" class="empty" hidden>No sensor data in this date range.</div>
+      <p class="note">Each point is that day's peak 5-minute average for the segment.</p>
+    </div>
+    <div class="card">
+      <h2>Daily Peak Density by Segment</h2>
+      <div class="tablewrap"><table class="grid" id="h-table"></table></div>
+    </div>
+    <div class="card">
+      <h2>Forecast Accuracy</h2>
+      <div id="h-acc"></div>
+    </div>
+  </section>
+
+  <!-- ===================== FORECAST ===================== -->
+  <section data-page="forecast" hidden>
+    <div class="row r-1-1">
+      <div class="card">
+        <h2>Forecast Model</h2>
+        <div class="mtabs" role="tablist" id="f-tabs">
+          <button role="tab" data-m="ARIMA">ARIMA</button>
+          <button role="tab" data-m="Prophet">Prophet</button>
+          <button role="tab" data-m="ARIMAX">ARIMAX</button>
+        </div>
+        <div id="f-desc"></div>
+        <div id="f-inuse"></div>
+      </div>
+      <div class="card">
+        <h2>Forecast Metrics</h2>
+        <div class="metrics" id="f-metrics"></div>
+        <p class="note">Scored by forecasting 30 minutes ahead from every half hour of the most recent day, using only data from before each point.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="h2row"><h2>30-Minute Segment Forecast</h2><span class="side" id="f-updated"></span></div>
+      <div class="chartbox"><canvas id="f-chart" data-h="380"></canvas><div class="tip"></div></div>
+      <div id="f-empty" class="empty" hidden></div>
+      <div class="legend center" id="f-legend"></div>
+    </div>
+    <div class="row r-1-1">
+      <div class="card">
+        <h2>Baseline Comparison</h2>
+        <div class="tablewrap" style="margin:0"><table class="plain" id="f-base"></table></div>
+      </div>
+      <div class="card">
+        <h2>Least-Crowded Zone Prediction</h2>
+        <div id="f-reco"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="vertical-align:-3px;margin-right:8px"><path d="M6 3v6a6 6 0 0 0 12 0V3M12 15v6M6 3h0M18 3h0"/></svg>Exogenous Variables</h2>
+      <div class="exo" id="f-exo"></div>
+      <p class="note">Train schedule and service disruption feeds are not connected. ARIMAX can use them as extra inputs once a feed is available.</p>
+    </div>
+  </section>
+
+  <!-- ===================== SETTINGS ===================== -->
+  <section data-page="settings" hidden>
+    <div class="settings-head">
+      <h2>Alert Configuration</h2>
+      <p>Manage density thresholds and global system preferences.</p>
+    </div>
+    <div class="panel">
+      <h3>Density Thresholds</h3>
+      <div class="tablewrap" style="margin:0"><table class="plain" id="s-thr"></table></div>
+    </div>
+    <div class="panel">
+      <h3>Segment Sensors</h3>
+      <div class="body">
+        <div class="form-grid" id="s-segs" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))"></div>
+        <p class="note">Set each segment to the NODE_ID of the ESP32 above it. Leave a segment empty if it has no sensor.</p>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>System Preferences</h3>
+      <div class="body form-grid">
+        <div><label for="s-lead">Forecast alert lead time</label>
+          <select id="s-lead"><option value="10">10 Minutes</option><option value="15">15 Minutes</option><option value="20">20 Minutes</option><option value="30">30 Minutes</option></select></div>
+        <div><label for="s-refresh">Dashboard refresh interval</label>
+          <select id="s-refresh"><option value="5">5 Seconds</option><option value="10">10 Seconds</option><option value="30">30 Seconds</option><option value="60">60 Seconds</option></select></div>
+        <div><label for="s-ret">Data retention (days)</label><input id="s-ret" type="number" min="7" max="3650"></div>
+        <div><label for="s-lang">Language toggle</label>
+          <select id="s-lang"><option value="fil">Filipino (Default)</option><option value="en">English</option></select>
+          <div class="hint">Language of the commuter message on the platform display.</div></div>
+        <div><label for="s-model">Forecast model in use</label>
+          <select id="s-model"><option value="auto">Automatic (most accurate)</option><option>ARIMA</option><option>ARIMAX</option><option>Prophet</option></select></div>
+        <div><label for="s-station">Station name</label><input id="s-station" maxlength="60"></div>
+        <div><label for="s-line">Line</label><input id="s-line" maxlength="60"></div>
+        <div><label>Entry gate</label><label class="check" style="text-transform:none;font-weight:400"><input type="checkbox" id="s-gate"> Close the gate automatically when every segment is High</label></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Sensor Calibration</h3>
+      <div class="body">
+        <p style="margin-top:0">Relearn the empty floor after moving a sensor or changing the floor. Clear the area under it first; it takes about 30 seconds.</p>
+        <div class="actions" style="justify-content:flex-start">
+          <select id="s-cal-seg" class="pill" style="padding:12px"><option value="all">All segments</option><option>A</option><option>B</option><option>C</option><option>D</option></select>
+          <button class="btn secondary small" id="s-cal">Recalibrate</button>
+        </div>
+      </div>
+    </div>
+    <div class="actions">
+      <input type="password" id="s-pin" inputmode="numeric" placeholder="Staff PIN" aria-label="Staff PIN">
+      <button class="btn secondary" id="s-reset">Restore Defaults</button>
+      <button class="btn" id="s-save">Save Settings</button>
+    </div>
+    <div class="msg" id="s-msg"></div>
+  </section>
+</main>
+<footer class="ver"><div id="ver">v1.1.0</div></footer>
+
+<dialog id="help-dlg">
+  <h3>How this dashboard works</h3>
+  <p>Four ceiling sensors (Seg A–D) measure how much of the floor under them is occupied. The hub turns that into a crowd level for each segment and forecasts the next 30 minutes every 5 minutes.</p>
+  <p id="help-levels"></p>
+  <p>The platform display tells commuters which zone has more room. When every segment is High, the entry gate closes until one segment drops below High.</p>
+  <form method="dialog"><button class="btn small">Close</button></form>
+</dialog>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const SEGS = ["A", "B", "C", "D"];
+  const SEGVAR = { A: "--seg-a", B: "--seg-b", C: "--seg-c", D: "--seg-d" };
+  const LVNAME = { low: "Low", moderate: "Moderate", high: "High", unknown: "No data" };
+  const MDESC = {
+    ARIMA: "Follows each segment's recent trend. Strong for the next 10–15 minutes, then levels off because it doesn't know the time of day.",
+    ARIMAX: "ARIMA plus the time of day, with separate daily patterns for workdays and for weekends and PH holidays. Catches rush hours before they start.",
+    Prophet: "Learns the daily and weekly crowd pattern and PH holidays. Ignores the last few minutes, so it reacts slowly to sudden surges.",
+  };
+  let state = null, settingsData = null, fcData = null, histData = null, fModel = null, timer = null;
+  const pct = v => v == null ? "—" : `${Math.round(v)}%`;
+  const parseT = s => { const [d, t] = s.split(/[ T]/); const [y, m, dd] = d.split("-").map(Number);
+    const [hh, mi, ss] = (t || "0:0").split(":").map(Number); return new Date(y, m - 1, dd, hh, mi, ss || 0); };
+  const hm = d => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  async function getJSON(u, opt) { const r = await fetch(u, { cache: "no-store", ...opt }); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j; }
+
+  // ---------------------------------------------------------------- tabs
+  function showTab(name) {
+    if (!["dashboard", "history", "forecast", "settings"].includes(name)) name = "dashboard";
+    document.querySelectorAll("[data-page]").forEach(p => p.hidden = p.dataset.page !== name);
+    document.querySelectorAll("nav.tabs a").forEach(a => a.toggleAttribute("aria-current", a.dataset.tab === name) || a.setAttribute("aria-current", a.dataset.tab === name ? "page" : ""));
+    document.querySelectorAll("nav.tabs a").forEach(a => { if (a.dataset.tab !== name) a.removeAttribute("aria-current"); else a.setAttribute("aria-current", "page"); });
+    if (name === "history") loadHistory();
+    if (name === "forecast") loadForecast();
+    if (name === "settings") loadSettings();
+    if (name === "dashboard") drawDashChart();
+  }
+  window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
+  $("go-settings").addEventListener("click", () => location.hash = "#settings");
+  $("help").addEventListener("click", () => $("help-dlg").showModal());
+
+  // ---------------------------------------------------------------- chart helper
+  function chart(canvas, o) {
+    const H = +canvas.dataset.h;                      // fixed CSS height from data-h
+    canvas.style.height = H + "px";
+    const dpr = window.devicePixelRatio || 1, W = canvas.clientWidth;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    const g = canvas.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    const L = 54, R = 16, T = o.top ?? 14, B = 34, pw = W - L - R, ph = H - T - B;
+    const X = x => L + (x - o.x0) / (o.x1 - o.x0) * pw, Y = v => T + ph - (v - (o.y0 || 0)) / (o.y1 - (o.y0 || 0)) * ph;
+    const font = (s, w = 400) => `${w} ${s}px Helvetica Neue, Arial, sans-serif`;
+    g.fillStyle = css("--white"); g.fillRect(L, T, pw, ph);
+    for (const b of o.bands || []) { g.fillStyle = b.color; g.fillRect(L, Y(Math.min(b.to, o.y1)), pw, Y(b.from) - Y(Math.min(b.to, o.y1))); }
+    g.strokeStyle = css("--line-soft"); g.lineWidth = 1; g.fillStyle = css("--muted"); g.font = font(14); g.textAlign = "right"; g.textBaseline = "middle";
+    for (const v of o.yTicks) { g.beginPath(); g.moveTo(L, Y(v) + .5); g.lineTo(W - R, Y(v) + .5); g.stroke(); g.fillText(v + "%", L - 10, Y(v)); }
+    for (const t of o.xTicks) { if (o.vgrid) { g.beginPath(); g.moveTo(X(t.x) + .5, T); g.lineTo(X(t.x) + .5, T + ph); g.stroke(); } }
+    g.strokeStyle = css("--line"); g.beginPath(); g.moveTo(L, T + ph + .5); g.lineTo(W - R, T + ph + .5); g.moveTo(L + .5, T); g.lineTo(L + .5, T + ph); g.stroke();
+    g.textAlign = "center"; g.textBaseline = "top"; g.fillStyle = css("--muted");
+    for (const t of o.xTicks) g.fillText(t.label, Math.min(W - R - 18, Math.max(L + 18, X(t.x))), T + ph + 10);
+    g.save(); g.beginPath(); g.rect(L, T - 6, pw, ph + 12); g.clip();     // keep lines inside the plot
+    for (const s of o.series) {
+      if (!s.pts.length) continue;
+      if (s.fill) {
+        g.beginPath(); g.moveTo(X(s.pts[0][0]), Y(0)); s.pts.forEach(p => g.lineTo(X(p[0]), Y(p[1]))); g.lineTo(X(s.pts.at(-1)[0]), Y(0));
+        g.closePath(); g.globalAlpha = .045; g.fillStyle = s.color; g.fill(); g.globalAlpha = 1;
+      }
+      g.strokeStyle = s.color; g.lineWidth = s.width || 3; g.lineJoin = "round"; g.lineCap = "round"; g.setLineDash(s.dash || []);
+      g.beginPath(); s.pts.forEach((p, i) => i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1]))); g.stroke(); g.setLineDash([]);
+      if (s.dots) for (const p of s.pts) { g.beginPath(); g.arc(X(p[0]), Y(p[1]), 6, 0, 7); g.fillStyle = s.color; g.fill(); }
+    }
+    g.restore();
+    if (o.now != null) {
+      const x = X(o.now) + .5;
+      g.strokeStyle = o.nowColor || css("--ink"); g.lineWidth = 1.5; g.setLineDash([5, 4]); g.beginPath(); g.moveTo(x, T); g.lineTo(x, T + ph); g.stroke(); g.setLineDash([]);
+      g.font = font(14, 700); const tw = g.measureText("NOW").width + 18;
+      g.fillStyle = o.nowColor || css("--ink"); g.fillRect(x, T + 8, tw, 26); g.fillStyle = "#fff"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("NOW", x + tw / 2, T + 21);
+    }
+    if (o.empty) { g.fillStyle = css("--muted"); g.font = font(15); g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(o.empty, L + pw / 2, T + ph / 2); }
+    canvas._chart = { o, X, L, R, W };
+  }
+  function attachTip(canvas, fmt) {
+    const tip = canvas.parentElement.querySelector(".tip");
+    const show = e => {
+      const c = canvas._chart; if (!c) return;
+      const r = canvas.getBoundingClientRect(), x = e.clientX - r.left;
+      const xv = c.o.x0 + (x - c.L) / (c.W - c.L - c.R) * (c.o.x1 - c.o.x0);
+      const rows = []; let at = null, bestD = Infinity;
+      for (const s of c.o.series) {
+        if (!s.pts.length || s.noTip) continue;
+        const p = s.pts.reduce((b, q) => Math.abs(q[0] - xv) < Math.abs(b[0] - xv) ? q : b);
+        const d = Math.abs(p[0] - xv);
+        if (d <= (c.o.tipWindow || Infinity)) { rows.push(`${s.name}: ${pct(p[1])}`); if (d < bestD) { bestD = d; at = p[0]; } }
+      }
+      if (!rows.length) { tip.style.display = "none"; return; }
+      tip.innerHTML = `<b>${fmt(at)}</b><br>${rows.join("<br>")}`;
+      tip.style.left = Math.max(80, Math.min(r.width - 80, c.X(at))) + "px"; tip.style.display = "block";
+    };
+    canvas.addEventListener("pointermove", show); canvas.addEventListener("pointerdown", show);
+    canvas.addEventListener("pointerleave", () => tip.style.display = "none");
+  }
+  const bandsFor = th => [
+    { from: 0, to: th.moderate, color: "rgba(62,155,71,.07)" },
+    { from: th.moderate, to: th.high, color: "rgba(217,120,30,.08)" },
+    { from: th.high, to: 100, color: "rgba(214,58,47,.08)" },
+  ];
+  const legendHTML = (items) => items.map(([n, v]) => `<span style="--c:var(${v})">${n}</span>`).join("");
+
+  // ---------------------------------------------------------------- dashboard
+  function renderState(s) {
+    state = s;
+    $("where").textContent = `${s.line} | ${s.station}`;
+    document.title = `${s.station} | Station Command Dashboard`;
+    $("ver").textContent = "v" + s.version;
+    const d = parseT(s.now);
+    $("updated").innerHTML = `<span class="dot"></span>Last Updated: ${d.toLocaleDateString("en-CA")} ${d.toLocaleTimeString([], { hour12: false })} PHT`;
+    const notes = [];
+    if (!s.clock_ok) notes.push("The hub's clock is wrong, so times are off. Fit the Pi 5 RTC battery or connect it to the internet once.");
+    if (s.forecast_status.state === "error") notes.push("The forecast service reported an error: " + esc(s.forecast_status.message));
+    $("notice").hidden = !notes.length; $("notice").innerHTML = notes.join("<br>");
+
+    const p = s.platform;
+    $("d-current").className = "lvlbox lv-" + p.level;
+    $("d-current").innerHTML = `<span>${LVNAME[p.level].toUpperCase()}</span><span class="big num">${pct(p.occupancy_pct)}</span>`;
+    const icon = k => k === "high" || k === "gate" ? "!" : k === "offline" ? "?" : "▲";
+    $("d-alerts").innerHTML = s.alerts.length
+      ? s.alerts.map(a => `<div class="lvlbox ${a.kind === "forecast" || a.kind === "offline" ? "lv-moderate" : "lv-high"}"><div>${esc(a.title)}<small>${esc(a.detail)}</small></div></div>`).join("")
+      : `<div class="lvlbox lv-low" style="justify-content:flex-start;gap:12px">${checkSvg()} NONE</div>`;
+    $("d-gate").innerHTML = s.gate.closed
+      ? `<div class="lvlbox lv-high"><span>CLOSED</span><span style="font-weight:400;font-size:14px">All segments High</span></div>`
+      : `<div class="lvlbox lv-low"><span>OPEN</span><span style="font-weight:400;font-size:14px">${s.settings ? "" : ""}</span></div>`;
+
+    renderTiles(s);
+    $("d-sensors").innerHTML = s.segments.map(g => {
+      const age = g.last_seen_s == null ? "never connected" : g.online ? (g.source === "live" ? "sending live frames" : "sending minute data")
+        : `last data ${g.last_seen_s < 3600 ? Math.round(g.last_seen_s / 60) + " min" : Math.round(g.last_seen_s / 3600) + " h"} ago`;
+      return `<div class="srow"><span><span class="sdot ${g.online ? "on" : ""}"></span>Seg ${g.id}<span class="muted" style="color:var(--muted)"> · ${esc(g.device || "unassigned")}</span></span><span style="color:var(--muted)">${g.device ? age : "assign in Settings"}</span></div>`;
+    }).join("");
+
+    // commuter message (what the OLED shows)
+    const m = s.message, lang = s.settings.language;
+    $("c-primary").textContent = lang === "fil" ? m.fil : m.en;
+    $("c-secondary").textContent = lang === "fil" ? `(${m.en})` : `(${m.fil})`;
+    const rec = s.recommendation;
+    $("c-zone").hidden = !rec;
+    if (rec) {
+      const lv = state.segments.find(g => g.id === rec.id)?.level || "unknown";
+      $("c-zone-name").textContent = `ZONE ${rec.id}`; $("c-zone-pct").textContent = pct(rec.now); $("c-zone-pct").className = "p num t-" + lv;
+    }
+    $("help-levels").textContent = `Levels: Low below ${s.settings.moderate_at}%, Moderate from ${s.settings.moderate_at}%, High from ${s.settings.high_at}% of the floor occupied.`;
+    drawDashChart();
+    if (timer) clearInterval(timer);
+    timer = setInterval(refresh, Math.max(2, s.settings.refresh_s) * 1000);
+  }
+
+  function drawDashChart() {
+    if (!state || document.querySelector('[data-page="dashboard"]').hidden) return;
+    const f = state.forecast, th = { moderate: state.settings.moderate_at, high: state.settings.high_at };
+    const segs = f ? Object.keys(f.segments).sort() : [];
+    $("d-legend").innerHTML = legendHTML(segs.map(sg => [`Seg ${sg}`, SEGVAR[sg]]));
+    const st = state.forecast_status || {};
+    if (!segs.length) {
+      $("d-chart").parentElement.hidden = true; $("d-fc-empty").hidden = false;
+      $("d-fc-empty").innerHTML = chartSvg() + (st.state === "collecting"
+        ? `Forecasts start after ${st.needed_days} days of sensor data. Collected so far: ${st.data_days} days.`
+        : "Waiting for the first forecast run.");
+      $("d-fc-alert").innerHTML = ""; return;
+    }
+    $("d-chart").parentElement.hidden = false; $("d-fc-empty").hidden = true;
+    const now = parseT(state.now).getTime();
+    const series = segs.map(sg => {
+      const d = f.segments[sg];
+      const pts = [...d.history, ...d.points].map(p => [parseT(p.t).getTime() + 150e3, p.v]);     // plot at bucket centres
+      const live = state.segments.find(g => g.id === sg);
+      if (live && live.occupancy_pct != null) pts.splice(d.history.length, 0, [now, live.occupancy_pct]);
+      return { name: `Seg ${sg}`, color: css(SEGVAR[sg]), pts: pts.sort((a, b) => a[0] - b[0]), width: 4 };
+    });
+    const x0 = now - 15 * 60e3, x1 = now + 30 * 60e3;
+    chart($("d-chart"), { x0, x1, y1: 100, yTicks: [0, 25, 50, 75, 100], bands: bandsFor(th), now, series, tipWindow: 4 * 60e3,
+      xTicks: [[-15, "-15m"], [0, "Now"], [15, "+15m"], [30, "+30m"]].map(([m, l]) => ({ x: now + m * 60e3, label: l })) });
+    const fa = state.alerts.filter(a => a.kind === "forecast" || a.kind === "high");
+    $("d-fc-alert").innerHTML = fa.map(a => `<div class="alertbar ${a.kind === "forecast" ? "" : ""}">${warnSvg("var(--high)")}<div><b>ALERT: ${esc(a.title)}</b><p>${esc(a.detail)}</p></div></div>`).join("") +
+      `<p class="note">Forecast by ${esc(f.model)}${state.forecast_status.updated ? `, updated ${esc(f.generated_at.slice(11, 16))}` : ""}. Shaded bands show the Low, Moderate and High ranges.</p>`;
+  }
+  attachTip($("d-chart"), t => { const m = Math.round((t - parseT(state.now).getTime()) / 60e3); return m === 0 ? "Now" : (m > 0 ? `+${m} min` : `${m} min`); });
+
+  // ---------------------------------------------------------------- live 8x8 grids
+  let live = {}, showNums = false;
+  function ensureTiles() {
+    if ($("d-map").children.length === 4) return;
+    $("d-map").innerHTML = SEGS.map(sg => `<div class="tile lv-unknown" id="tile-${sg}">
+        <div class="thead"><span class="seg" id="tseg-${sg}">SEG ${sg}</span><span><span class="pct num" id="tpct-${sg}">—</span> <span class="lv" id="tlv-${sg}"></span></span></div>
+        <div class="grid8" id="grid-${sg}" role="img" aria-label="Seg ${sg} overhead view">${"<i></i>".repeat(64)}<div class="over" id="over-${sg}">No data</div></div>
+        <div class="ppl"><span id="tppl-${sg}"></span><span id="tage-${sg}"></span></div></div>`).join("");
+    SEGS.forEach(sg => $("grid-" + sg).addEventListener("click", () => {
+      showNums = !showNums; SEGS.forEach(x => $("grid-" + x).classList.toggle("nums", showNums));
+    }));
+  }
+  function renderTiles(s) {
+    ensureTiles();
+    for (const g of s.segments) {
+      const lv = g.calibrating ? "unknown" : g.level;
+      $("tile-" + g.id).className = "tile lv-" + lv;
+      const ic = lv === "low" ? checkSvg(18) : lv === "moderate" ? warnSvg("currentColor", 18) : lv === "high" ? bangSvg(18) : dashSvg(18);
+      $("tseg-" + g.id).innerHTML = `${ic}SEG ${g.id}`;
+      $("tpct-" + g.id).textContent = g.calibrating ? "" : pct(g.occupancy_pct);
+      $("tlv-" + g.id).textContent = g.occupancy_pct == null || g.calibrating ? "" : LVNAME[lv];
+      $("tppl-" + g.id).textContent = g.people != null && !g.calibrating ? `≈ ${Math.round(g.people)} ${Math.round(g.people) === 1 ? "person" : "people"} in view` : "";
+    }
+    drawGrids();
+  }
+  function drawGrids() {
+    if (!state) return;
+    const occCol = { low: css("--low"), moderate: css("--mod"), high: css("--high"), unknown: css("--none") };
+    for (const g of state.segments) {
+      const grid = $("grid-" + g.id), over = $("over-" + g.id);
+      if (!grid) continue;
+      const f = g.device ? live[g.device] : null;
+      const age = f ? (parseT(state.now) - parseT(f.t)) / 1000 : null;
+      const fresh = f && age < 20;
+      if (!g.device) { over.hidden = false; over.textContent = "No sensor assigned. Set it in Settings."; }
+      else if (!f) { over.hidden = false; over.textContent = g.source === "minute" ? "Sensor sends minute summaries only (no live grid)" : "No data from " + g.device + ". Check the ESP32 is powered and on the CommuterDensity Wi-Fi."; }
+      else if (f.calibrating) { over.hidden = false; over.textContent = `Learning the empty floor: ${f.calib_progress} of 30 frames. Keep the area clear.`; }
+      else if (!fresh) { over.hidden = false; over.textContent = `No new frames for ${Math.round(age)} s`; }
+      else over.hidden = true;
+      $("tage-" + g.id).textContent = fresh ? "live" : "";
+      if (!f || !f.d) { [...grid.querySelectorAll("i")].forEach(c => { c.className = ""; c.style.background = ""; c.textContent = ""; }); continue; }
+      const cells = grid.querySelectorAll("i"), bg = f.background, oc = occCol[g.calibrating ? "unknown" : g.level] || occCol.high;
+      cells.forEach((c, i) => {
+        const ok = (f.s[i] === 5 || f.s[i] === 9) && f.d[i] > 0;
+        if (!ok) { c.className = "bad"; c.style.background = ""; c.textContent = ""; return; }
+        const h = bg && bg[i] > 0 ? Math.max(0, (bg[i] - f.d[i]) / 10) : null;     // cm above the floor
+        const occ = f.occ && f.occ[i];
+        c.className = occ ? "occ" : "";
+        c.style.background = occ ? oc : h == null ? "" : shade(Math.min(h / 120, 1));
+        c.textContent = h == null ? Math.round(f.d[i] / 10) : Math.round(h);
+      });
+    }
+  }
+  function shade(t) {           // light grey -> slate as objects get taller
+    const a = [226, 230, 236], b = [120, 132, 150];
+    return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(",")})`;
+  }
+  async function loadLive() {
+    if (document.querySelector('[data-page="dashboard"]').hidden) return;
+    try { live = await getJSON("/api/live"); } catch (e) { return; }
+    drawGrids();
+  }
+  setInterval(loadLive, 1000);
+
+  // ---------------------------------------------------------------- history
+  const hubNow = () => state ? parseT(state.now) : new Date();     // the hub's clock, not the phone's
+  function initDates() {
+    const end = hubNow(), start = new Date(end.getTime() - 6 * 864e5);
+    $("h-end").value = end.toLocaleDateString("en-CA"); $("h-start").value = start.toLocaleDateString("en-CA");
+  }
+  $("h-form").addEventListener("submit", e => { e.preventDefault(); $("h-start").dataset.user = "1"; loadHistory(); });
+  async function loadHistory() {
+    if (!$("h-start").value || !$("h-start").dataset.user) initDates();
+    try { histData = await getJSON(`/api/history?start=${$("h-start").value}&end=${$("h-end").value}`); } catch (e) { return; }
+    renderHistory();
+  }
+  function renderHistory() {
+    const h = histData; if (!h) return;
+    const segs = h.segments;
+    $("h-legend").innerHTML = legendHTML(segs.map(sg => [`Seg ${sg}`, SEGVAR[sg]]));
+    const days = h.days;
+    $("h-empty").hidden = days.length > 0; $("h-chart").parentElement.hidden = !days.length;
+    if (days.length) {
+      const xs = days.map((d, i) => i);
+      const series = segs.map(sg => ({ name: `Seg ${sg}`, color: css(SEGVAR[sg]), dots: true, width: 3,
+        pts: days.map((d, i) => d.segments[sg] ? [i, d.segments[sg].peak] : null).filter(Boolean) }));
+      const lbl = d => { const dt = parseT(d + " 00:00"); return dt.toLocaleDateString("en-US", { weekday: "short" }) + " " + (dt.getMonth() + 1) + "/" + dt.getDate(); };
+      const step = Math.ceil(days.length / 8);
+      chart($("h-chart"), { x0: -0.15, x1: Math.max(1, days.length - 1) + 0.15, y1: 100, yTicks: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100], series, vgrid: true,
+        xTicks: days.map((d, i) => ({ x: i, label: lbl(d.date) })).filter((t, i) => i % step === 0 || i === days.length - 1), tipWindow: 0.4 });
+      $("h-chart")._label = i => lbl(days[Math.round(i)].date);
+    }
+    const head = `<tr><th>Day</th>${segs.map(sg => `<th>Seg ${sg}</th>`).join("")}<th class="sep">Overall Peak</th></tr>`;
+    const body = days.slice().map(d => `<tr><td>${d.date}</td>${segs.map(sg => {
+      const c = d.segments[sg]; return c ? `<td class="c-${c.level} num" title="Peak at ${c.t}">${pct(c.peak)}</td>` : `<td>—</td>`; }).join("")}
+      <td class="sep"><b class="t-${d.overall.level} num">${pct(d.overall.peak)}</b><span class="muted">(Seg ${d.overall.seg}, ${d.overall.t})</span></td></tr>`).join("");
+    $("h-table").innerHTML = days.length ? head + body : head + `<tr><td colspan="${segs.length + 2}" style="color:var(--muted)">No data in this range.</td></tr>`;
+    $("h-acc").innerHTML = accuracyTable(h.metrics, h.best_model, h.fitted_at);
+  }
+  attachTip($("h-chart"), i => ($("h-chart")._label || (() => ""))(i));
+
+  function accuracyTable(m, best, fitted) {
+    if (!m || !Object.keys(m).length) return `<div class="empty">${chartSvg()}Metrics shown after validation: MAPE, RMSE, agreement.<br>Validation runs once there are at least 3 days of data.</div>`;
+    const order = ["ARIMA", "ARIMAX", "Prophet", "Persistence", "Moving avg (3 h)"].filter(k => m[k]);
+    const f = v => v == null ? "—" : v.toFixed(1);
+    return `<div class="tablewrap" style="margin-bottom:0"><table class="grid"><tr><th>Model</th><th>MAPE</th><th>RMSE</th><th>MAE</th><th>Level agreement</th></tr>` +
+      order.map(k => `<tr class="${k === best ? "active" : ""}"><td>${k}${k === best ? " (most accurate)" : ""}${k.startsWith("Persist") || k.startsWith("Moving") ? '<span class="muted">baseline</span>' : ""}</td>
+        <td class="num">${m[k].MAPE == null ? "—" : f(m[k].MAPE) + "%"}</td><td class="num">${f(m[k].RMSE)}</td><td class="num">${f(m[k].MAE)}</td><td class="num">${f(m[k].agreement)}%</td></tr>`).join("") +
+      `</table></div><p class="note">30-minute-ahead forecasts on the most recent day, averaged over segments. RMSE and MAE are in percentage points of floor occupied. MAPE counts only times the segment was at least 5% occupied. Level agreement is how often the forecast landed in the same Low/Moderate/High level as what happened.${fitted ? ` Last validated ${esc(fitted.slice(0, 16))}.` : ""}</p>`;
+  }
+
+  // ---------------------------------------------------------------- forecast tab
+  $("f-tabs").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; fModel = b.dataset.m; loadForecast(); });
+  async function loadForecast() {
+    try { fcData = await getJSON("/api/forecast" + (fModel ? `?model=${fModel}` : "")); } catch (e) { return; }
+    if (!fModel && fcData.ready) fModel = fcData.active_model;
+    renderForecast();
+  }
+  function renderForecast() {
+    const f = fcData; if (!f) return;
+    const model = fModel || "ARIMAX";
+    document.querySelectorAll("#f-tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.m === model));
+    $("f-desc").innerHTML = `<p style="margin:0;font-size:17px">${MDESC[model]}</p>`;
+    const cal = f.calendar;
+    $("f-exo").innerHTML = `
+      <div class="box"><div class="k">Calendar</div><div class="v">${cal.day_type}, ${cal.weekday}</div><div class="d">${cal.off_day ? "Weekend/holiday daily pattern applied." : "Workday daily pattern applied."}</div></div>
+      <div class="box"><div class="k">PH holidays</div><div class="v">${cal.holiday ? esc(cal.holiday) : "None today"}</div><div class="d ${cal.holiday ? "orange" : ""}">${cal.next_holiday ? `Next: ${esc(cal.next_holiday.name)}, ${cal.next_holiday.date}` : ""}</div></div>
+      <div class="box"><div class="k">Time of day</div><div class="v">${hubNow().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}</div><div class="d">Rush-hour shape modelled with daily harmonics (ARIMAX, Prophet).</div></div>`;
+    if (!f.ready) {
+      const st = f.status || {};
+      const msg = st.state === "collecting" ? `Forecasts start after ${st.needed_days} days of sensor data. Collected so far: ${st.data_days} days.` : "Waiting for the first forecast run.";
+      $("f-inuse").innerHTML = ""; $("f-metrics").innerHTML = `<p class="empty" style="grid-column:1/-1">${msg}</p>`;
+      $("f-chart").parentElement.hidden = true; $("f-empty").hidden = false; $("f-empty").innerHTML = chartSvg() + msg;
+      $("f-legend").innerHTML = ""; $("f-base").innerHTML = ""; $("f-reco").innerHTML = `<p class="empty">${msg}</p>`; $("f-updated").textContent = "";
+      return;
+    }
+    $("f-inuse").innerHTML = model === f.active_model ? `<span class="inuse">In use on the dashboard${f.auto ? " (automatic: most accurate)" : ""}</span>` : "";
+    const m = f.metrics[model] || {};
+    const fx = v => v == null ? "—" : v.toFixed(1);
+    $("f-metrics").innerHTML = `<div class="metric"><div class="k">MAPE</div><div class="v orange num">${m.MAPE == null ? "—" : fx(m.MAPE) + "%"}</div></div>
+      <div class="metric"><div class="k">RMSE</div><div class="v blue num">${fx(m.RMSE)}</div></div>
+      <div class="metric"><div class="k">Level agreement</div><div class="v num" style="color:var(--low)">${m.agreement == null ? "—" : fx(m.agreement) + "%"}</div></div>`;
+    $("f-updated").textContent = f.generated_at ? `Updated: ${f.generated_at.slice(11, 16)} PHT` : "";
+    const segs = Object.keys(f.segments).sort();
+    const th = f.thresholds;
+    const gen = parseT(f.generated_at).getTime();
+    const series = segs.map(sg => {
+      const d = f.segments[sg];
+      return { name: `Seg ${sg}`, color: css(SEGVAR[sg]), fill: true, width: 4,
+        pts: [...d.history.slice(-3), ...d.points].map(p => [parseT(p.t).getTime() + 150e3, p.v]) };
+    });
+    // platform average across segments for the selected model
+    const avgPts = [];
+    if (segs.length) {
+      const n = Math.min(...segs.map(sg => f.segments[sg].points.length));
+      const h = Math.min(...segs.map(sg => f.segments[sg].history.length), 3);
+      for (let i = -h; i < n; i++) {
+        const vals = segs.map(sg => i < 0 ? f.segments[sg].history.at(i).v : f.segments[sg].points[i].v);
+        const t = i < 0 ? f.segments[segs[0]].history.at(i).t : f.segments[segs[0]].points[i].t;
+        avgPts.push([parseT(t).getTime() + 150e3, vals.reduce((a, b) => a + b, 0) / vals.length]);
+      }
+      series.push({ name: "Platform avg", color: css("--primary"), pts: avgPts, width: 2.5, dash: [8, 6] });
+    }
+    $("f-chart").parentElement.hidden = false; $("f-empty").hidden = true;
+    const first = series.length ? Math.min(...series.map(s => s.pts[0]?.[0] ?? Infinity)) : gen;
+    const last = series.length ? Math.max(...series.map(s => s.pts.at(-1)?.[0] ?? -Infinity)) : gen;
+    const nowT = f.segments[segs[0]] ? parseT(f.segments[segs[0]].points[0].t).getTime() : gen;
+    chart($("f-chart"), { x0: first - 60e3, x1: last + 60e3, y1: 100, yTicks: [0, 25, 50, 75, 100], bands: bandsFor(th), series, now: nowT, nowColor: css("--mod"),
+      tipWindow: 3 * 60e3,
+      xTicks: series[0] ? series[0].pts.map(p => ({ x: p[0], label: new Date(p[0] - 150e3).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) })).filter((t, i) => i % 2 === 0) : [] });
+    $("f-legend").innerHTML = legendHTML([...segs.map(sg => [`Seg ${sg}`, SEGVAR[sg]]), ["Platform Avg", "--primary"]]);
+
+    const rows = [["Persistence", "Baseline"], ["Moving avg (3 h)", "Baseline"], ["ARIMA", "Candidate"], ["ARIMAX", "Candidate"], ["Prophet", "Candidate"]]
+      .filter(([k]) => f.metrics[k]);
+    $("f-base").innerHTML = `<tr><th>Model</th><th>MAPE</th><th>RMSE</th><th>Status</th></tr>` + rows.map(([k, st]) => {
+      const a = k === f.active_model, mm = f.metrics[k];
+      return `<tr class="${a ? "active" : ""}"><td>${k}${a ? " (Active)" : ""}</td><td class="num">${mm.MAPE == null ? "—" : fx(mm.MAPE) + "%"}</td><td class="num">${fx(mm.RMSE)}</td><td>${a ? "Deployed" : k === f.best_model ? "Most accurate" : st}</td></tr>`;
+    }).join("");
+
+    const lc = f.least_crowded;
+    $("f-reco").innerHTML = lc ? `<div class="reco">${checkSvg(32)}<div><b>Next 5-min interval: Zone ${lc.id} (Seg ${lc.id})</b><span class="t-${lc.level}">${pct(lc.v)} predicted occupancy</span></div></div>
+      <div class="quote"><b>Inirerekomenda: Zone ${lc.id}.</b><i>(Recommended: Zone ${lc.id}.)</i></div>
+      <p class="note">Predicted by ${esc(model)}.</p>` : `<p class="empty">No segment forecasts yet.</p>`;
+  }
+  attachTip($("f-chart"), t => new Date(t - 150e3).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }));
+
+  // ---------------------------------------------------------------- settings
+  async function loadSettings() {
+    try { settingsData = await getJSON("/api/settings"); } catch (e) { return; }
+    const s = settingsData.settings;
+    renderThresholds(s);
+    $("s-segs").innerHTML = SEGS.map(sg => `<div><label for="seg-${sg}">Seg ${sg} sensor</label>
+      <input id="seg-${sg}" list="devlist" value="${esc(s.segments[sg] || "")}" placeholder="e.g. platform-${sg}"></div>`).join("") +
+      `<datalist id="devlist">${settingsData.devices.map(d => `<option value="${esc(d)}">`).join("")}</datalist>`;
+    $("s-lead").value = s.alert_lead_min; $("s-refresh").value = s.refresh_s; $("s-ret").value = s.retention_days;
+    $("s-lang").value = s.language; $("s-model").value = s.active_model; $("s-station").value = s.station_name;
+    $("s-line").value = s.line_name; $("s-gate").checked = !!s.gate_enabled;
+    if (!settingsData.admin_enabled) setMsg("err", "Changes are disabled until ADMIN_PIN is set on the hub (/etc/commuter-density.env).");
+  }
+  function renderThresholds(s) {
+    const row = (name, range, lv, key) => `<tr><td>${name}</td><td class="num" id="thr-${lv}">${range}</td>
+      <td><span class="bdot" style="background:var(--${lv === "moderate" ? "mod" : lv})"></span><span class="badge lv-${lv}">${lv === "low" ? checkSvg(16) : lv === "moderate" ? warnSvg("currentColor", 16) : bangSvg(16)} ${LVNAME[lv]}</span></td>
+      <td style="text-align:right">${key ? `<button class="btn secondary small" data-edit="${key}">Edit</button>` : ""}</td></tr>`;
+    $("s-thr").innerHTML = `<tr><th>Level</th><th>Threshold (% of floor occupied)</th><th>Dashboard preview</th><th style="text-align:right">Action</th></tr>` +
+      row("Low", `0 – ${s.moderate_at - 1}`, "low", null) + row("Moderate", `${s.moderate_at} – ${s.high_at - 1}`, "moderate", "moderate_at") + row("High", `${s.high_at}+`, "high", "high_at");
+  }
+  $("s-thr").addEventListener("click", e => {
+    const b = e.target.closest("[data-edit]"); if (!b) return;
+    const key = b.dataset.edit, s = settingsData.settings;
+    const cell = $(key === "moderate_at" ? "thr-moderate" : "thr-high");
+    cell.innerHTML = `Starts at <input class="thr-input" type="number" min="1" max="100" id="edit-${key}" value="${s[key]}"> %`;
+    $("edit-" + key).focus(); b.remove();
+  });
+  function collect() {
+    const s = settingsData.settings;
+    const ed = k => $("edit-" + k) ? +$("edit-" + k).value : s[k];
+    return { moderate_at: ed("moderate_at"), high_at: ed("high_at"), alert_lead_min: +$("s-lead").value, refresh_s: +$("s-refresh").value,
+      retention_days: +$("s-ret").value, language: $("s-lang").value, active_model: $("s-model").value, station_name: $("s-station").value,
+      line_name: $("s-line").value, gate_enabled: $("s-gate").checked,
+      segments: Object.fromEntries(SEGS.map(sg => [sg, $("seg-" + sg).value.trim()])) };
+  }
+  const setMsg = (k, t) => { $("s-msg").className = "msg " + k; $("s-msg").textContent = t; };
+  $("s-save").addEventListener("click", async () => {
+    try { await getJSON("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: $("s-pin").value, settings: collect() }) });
+      setMsg("ok", "Settings saved."); await loadSettings(); refresh(); } catch (e) { setMsg("err", e.message); }
+  });
+  $("s-reset").addEventListener("click", async () => {
+    if (!confirm("Restore all settings to their defaults?")) return;
+    try { await getJSON("/api/settings/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: $("s-pin").value }) });
+      setMsg("ok", "Defaults restored."); await loadSettings(); refresh(); } catch (e) { setMsg("err", e.message); }
+  });
+  $("s-cal").addEventListener("click", async () => {
+    try { const j = await getJSON("/api/calibrate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: $("s-pin").value, segment: $("s-cal-seg").value }) });
+      setMsg("ok", j.message); } catch (e) { setMsg("err", e.message + (e.message.includes("PIN") ? " Enter the staff PIN below." : "")); }
+  });
+
+  // ---------------------------------------------------------------- icons
+  function checkSvg(n = 26) { return `<svg width="${n}" height="${n}" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="currentColor"/><path d="M7 12.5l3.2 3.2L17 9" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`; }
+  function warnSvg(c = "currentColor", n = 26) { return `<svg width="${n}" height="${n}" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5L1.5 21h21z" fill="${c}"/><path d="M12 9v6" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="18" r="1.2" fill="#fff"/></svg>`; }
+  function bangSvg(n = 26) { return `<svg width="${n}" height="${n}" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="currentColor"/><path d="M12 6.5v7" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="17.2" r="1.4" fill="#fff"/></svg>`; }
+  function dashSvg(n = 26) { return `<svg width="${n}" height="${n}" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 3"/></svg>`; }
+  function chartSvg() { return `<svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 16v-3M12 16V8M16 16v-5"/></svg>`; }
+
+  // ---------------------------------------------------------------- refresh
+  async function refresh() {
+    try { renderState(await getJSON("/api/state")); }
+    catch (e) { $("updated").innerHTML = `<span class="dot stale"></span>Hub unreachable. Check you're on the station Wi-Fi.`; }
+    if (!document.querySelector('[data-page="forecast"]').hidden) loadForecast();
+  }
+  window.addEventListener("resize", () => { drawDashChart(); renderHistory(); renderForecast(); });
+  initDates();
+  showTab(location.hash.slice(1) || "dashboard");
+  refresh();
+})();
+</script>
+</body>
+</html>
