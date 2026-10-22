@@ -27,6 +27,7 @@ import os
 import socket
 import textwrap
 import threading
+import time
 from datetime import date, datetime, timedelta
 
 import holidays
@@ -43,7 +44,7 @@ PORTAL_NAME = os.environ.get("PORTAL_NAME", "alerto.lan").lower()
 DEVICE_KEY = os.environ.get("DEVICE_KEY", "")
 ADMIN_PIN = os.environ.get("ADMIN_PIN", "")
 TS = "%Y-%m-%d %H:%M:%S"
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 _hn = socket.gethostname().lower()
 ALLOWED_HOSTS = {PORTAL_IP, PORTAL_NAME, "localhost", "127.0.0.1", _hn, f"{_hn}.local"}
@@ -103,7 +104,10 @@ def frame():
             raise ValueError("need 64 distances and 64 statuses")
     except (KeyError, ValueError, TypeError) as e:
         return jsonify(error=f"bad frame: {e}"), 400
-    processor.add(dev, d, s)
+    seq = j.get("seq")
+    if not isinstance(seq, int) or isinstance(seq, bool):
+        seq = None                    # optional; only a whole number counts
+    processor.add(dev, d, s, seq=seq)
     return jsonify(ok=True)
 
 
@@ -147,12 +151,14 @@ def segment_states(s, now):
     for seg in cfg.SEGMENT_IDS:
         dev = s["segments"].get(seg, "")
         st = {"id": seg, "device": dev, "occupancy_pct": None, "people": None, "level": "unknown",
-              "online": False, "calibrating": False, "last_seen_s": None, "source": None}
+              "online": False, "calibrating": False, "last_seen_s": None, "source": None,
+              "rx_ms": None, "seq": None}
         if dev:
             f = live.get(dev)
             age = (now - datetime.strptime(f["t"], TS)).total_seconds() if f else None
             if f and age <= 15:
-                st.update(online=True, last_seen_s=int(age), source="live", calibrating=f.get("calibrating", False))
+                st.update(online=True, last_seen_s=int(age), source="live", calibrating=f.get("calibrating", False),
+                          rx_ms=f.get("rx_ms"), seq=f.get("seq"))
                 if not f.get("calibrating"):
                     st.update(occupancy_pct=f["occupancy_pct"], people=f["people"])
             else:
@@ -226,6 +232,7 @@ def build_state():
     s = cfg.load()
     now = datetime.now()
     segs = segment_states(s, now)
+    now_ms = int(time.time() * 1000)  # after reading frames, so now_ms >= every rx_ms in this state
     fc = read_json("forecast.json")
     model = (fc or {}).get("active_model")
     fv = forecast_view(fc, model) if model else {}
@@ -261,7 +268,7 @@ def build_state():
         alerts.insert(0, {"kind": "gate", "seg": None, "title": "Entry gate closed: every segment is High",
                           "detail": "It reopens when any segment drops 5 points below the High threshold."})
     return {
-        "now": now.strftime(TS), "clock_ok": now.year >= 2025, "version": VERSION,
+        "now": now.strftime(TS), "now_ms": now_ms, "clock_ok": now.year >= 2025, "version": VERSION,
         "station": s["station_name"], "line": s["line_name"],
         "settings": {k: s[k] for k in ("moderate_at", "high_at", "alert_lead_min", "refresh_s", "language")},
         "segments": segs, "platform": {"occupancy_pct": platform, "level": cfg.level(platform, s)},
