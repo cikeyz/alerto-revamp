@@ -128,8 +128,17 @@ def main():
                     state = json.loads(body)
                     seg = next(s for s in state["segments"] if s["id"] == args.segment)
                     now_ms, rx_ms, seq = state["now_ms"], seg["rx_ms"], seg.get("seq")
-                except (ValueError, KeyError, TypeError, StopIteration):
-                    errors["bad payload"] = errors.get("bad payload", 0) + 1
+                    if (type(now_ms) is not int or (rx_ms is not None and type(rx_ms) is not int) or
+                            (seq is not None and type(seq) is not int)):
+                        raise ValueError("wrong-typed latency fields")
+                except (ValueError, KeyError, TypeError, StopIteration) as e:
+                    # distinguish missing segments and old gateways from malformed responses
+                    error = "bad payload"
+                    if isinstance(e, StopIteration):
+                        error = f"no segment {args.segment}"
+                    elif isinstance(e, KeyError) and e.args[0] in ("rx_ms", "now_ms"):
+                        error = "no latency fields"
+                    errors[error] = errors.get(error, 0) + 1
                     continue
                 responses += 1
                 tracker.update(now_ms, rx_ms, seq)
