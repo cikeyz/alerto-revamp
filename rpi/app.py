@@ -12,6 +12,7 @@ Output ESP32 (OLED + servo gate)
 Dashboard
   GET  /                 dashboard page
   GET  /api/state        live segments, platform level, alerts, recommendation, gate
+  GET  /api/stream       state and raw frames as Server-Sent Events (4 clients max)
   GET  /api/forecast     30-min forecasts per segment for a model, scores, baselines
   GET  /api/history      daily peak per segment for a date range
   GET/POST /api/settings thresholds, preferences, sensor-to-segment mapping (POST needs PIN)
@@ -44,7 +45,7 @@ PORTAL_NAME = os.environ.get("PORTAL_NAME", "alerto.lan").lower()
 DEVICE_KEY = os.environ.get("DEVICE_KEY", "")
 ADMIN_PIN = os.environ.get("ADMIN_PIN", "")
 TS = "%Y-%m-%d %H:%M:%S"
-VERSION = "1.1.1"
+VERSION = "1.2.0"
 
 _hn = socket.gethostname().lower()
 ALLOWED_HOSTS = {PORTAL_IP, PORTAL_NAME, "localhost", "127.0.0.1", _hn, f"{_hn}.local"}
@@ -52,7 +53,7 @@ ALLOWED_HOSTS |= {h.strip().lower() for h in os.environ.get("EXTRA_HOSTS", "").s
 
 app = Flask(__name__, static_folder=None)
 store.init_db()
-processor = FrameProcessor()
+processor = FrameProcessor(on_frame=lambda: _state_builder.notify())
 _gate = {"closed": False, "since": None}
 _gate_lock = threading.Lock()
 _cal_pending = set()
@@ -139,12 +140,11 @@ def ingest():
 
 @app.get("/api/live")
 def live():
-    return jsonify(processor.live())
+    return jsonify(_state_builder.get()["live"])
 
 
 # ------------------------------------------------------------------ crowd state
-def segment_states(s, now):
-    live = processor.live()
+def segment_states(s, now, live):
     con = store.connect()
     recent = (now - timedelta(minutes=3)).strftime(TS)
     out = []
@@ -228,10 +228,10 @@ def messages(segs, rec, gate):
     return {"fil": "Walang datos mula sa mga sensor.", "en": "No sensor data yet.", "kind": "none"}
 
 
-def build_state():
+def build_state(live):
     s = cfg.load()
     now = datetime.now()
-    segs = segment_states(s, now)
+    segs = segment_states(s, now, live)
     now_ms = int(time.time() * 1000)  # after reading frames, so now_ms >= every rx_ms in this state
     fc = read_json("forecast.json")
     model = (fc or {}).get("active_model")
@@ -282,15 +282,130 @@ def build_state():
     }
 
 
+class StateBuilder:
+    def __init__(self, interval=1.0):
+        self.condition = threading.Condition()
+        self.interval = interval
+        self.current = None
+        self.requested = self.completed = 0
+        self.pending = True
+        self.stopped = False
+        self.thread = None
+
+    def _start(self):
+        if self.thread is None:
+            self.thread = threading.Thread(target=self._run, name="state-builder", daemon=True)
+            self.thread.start()
+
+    def notify(self):
+        with self.condition:
+            self.requested += 1
+            self.pending = True
+            self._start()
+            self.condition.notify_all()
+
+    def get(self, timeout=0.1):
+        with self.condition:
+            self._start()
+            wanted = self.requested
+            # bounded: requests wait briefly for a rebuild in flight, then serve the last snapshot, so a
+            # slow or stuck rebuild never pushes /api/display past the bench's 250 ms read timeout
+            self.condition.wait_for(lambda: self.current is not None and self.completed >= wanted,
+                                    timeout=timeout)
+            if self.current is None:
+                self.condition.wait_for(lambda: self.current is not None, timeout=10)
+            if self.current is None:
+                raise RuntimeError("crowd state not built yet")
+            return self.current
+
+    def close(self):
+        with self.condition:
+            self.stopped = True
+            self.condition.notify_all()
+        if self.thread is not None:
+            self.thread.join()
+
+    def _run(self):
+        next_update = time.monotonic()
+        while True:
+            with self.condition:
+                self.condition.wait_for(lambda: self.pending or self.stopped,
+                                        timeout=max(0, next_update - time.monotonic()))
+                if self.stopped:
+                    return
+                wanted = self.requested
+                self.pending = False
+                next_update = time.monotonic() + self.interval
+            try:
+                live = processor.live()
+                state = build_state(live)
+            except Exception:
+                app.logger.exception("Could not rebuild crowd state")
+            else:
+                with self.condition:
+                    state["rev"] = self.current["state"]["rev"] + 1 if self.current else 1
+                    self.current = {"state": state, "live": live}
+            finally:
+                with self.condition:
+                    self.completed = wanted
+                    self.condition.notify_all()
+
+
+_state_builder = StateBuilder()
+_stream_slots = threading.BoundedSemaphore(4)
+
+
+def rebuild_now():
+    """Wait for a rebuild owned by the builder thread, including in tests."""
+    _state_builder.notify()
+    return _state_builder.get(timeout=10)["state"]
+
+
 @app.get("/api/state")
 def api_state():
-    return jsonify(build_state())
+    return jsonify(_state_builder.get()["state"])
+
+
+@app.get("/api/stream")
+def api_stream():
+    if not _stream_slots.acquire(blocking=False):
+        return jsonify(error="Too many streams. Poll /api/state and retry in 15 seconds."), 503
+    builder = _state_builder
+    released = False
+
+    def release():
+        nonlocal released
+        if not released:
+            released = True
+            _stream_slots.release()
+
+    def generate():
+        try:
+            snapshot = builder.get()
+            while True:
+                rev = snapshot["state"]["rev"]
+                data = json.dumps(dict(snapshot["state"], live=snapshot["live"]), separators=(",", ":"))
+                yield f"event: state\nretry: 15000\ndata: {data}\n\n"
+                while True:
+                    with builder.condition:
+                        changed = builder.condition.wait_for(
+                            lambda: builder.current["state"]["rev"] != rev, timeout=15)
+                        snapshot = builder.current
+                    if changed:
+                        break
+                    yield ": ping\n\n"
+        finally:
+            release()
+
+    resp = Response(generate(), mimetype="text/event-stream", headers={"X-Accel-Buffering": "no"})
+    resp.call_on_close(release)
+    return resp
 
 
 @app.get("/api/display")
 def api_display():
     """Compact feed for the output ESP32: 128x64 OLED (21 chars x 6 lines) + servo gate."""
-    st = build_state()
+    st = _state_builder.get()["state"]
     lang = st["settings"]["language"]
     msg = st["message"][lang]
     rec = st["recommendation"]
@@ -409,6 +524,7 @@ def api_settings_save():
         saved = cfg.save(j.get("settings", {}))
     except (ValueError, TypeError) as e:
         return jsonify(error=str(e)), 400
+    _state_builder.notify()
     return jsonify(ok=True, settings=saved)
 
 
@@ -417,7 +533,9 @@ def api_settings_reset():
     j = request.get_json(force=True, silent=True) or {}
     if not pin_ok(j.get("pin")):
         return jsonify(error="Wrong PIN." if ADMIN_PIN else "Set ADMIN_PIN first."), 403
-    return jsonify(ok=True, settings=cfg.reset())
+    saved = cfg.reset()
+    _state_builder.notify()
+    return jsonify(ok=True, settings=saved)
 
 
 @app.post("/api/calibrate")

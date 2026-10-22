@@ -438,6 +438,7 @@
     Prophet: "Learns the daily and weekly crowd pattern and PH holidays. Ignores the last few minutes, so it reacts slowly to sudden surges.",
   };
   let state = null, settingsData = null, fcData = null, histData = null, fModel = null, timer = null;
+  let stream = null, streamConnected = false, streamRetry = null, liveTimer = null, latestSnapshot = null;
   const pct = v => v == null ? "—" : `${Math.round(v)}%`;
   const parseT = s => { const [d, t] = s.split(/[ T]/); const [y, m, dd] = d.split("-").map(Number);
     const [hh, mi, ss] = (t || "0:0").split(":").map(Number); return new Date(y, m - 1, dd, hh, mi, ss || 0); };
@@ -569,8 +570,6 @@
     }
     $("help-levels").textContent = `Levels: Low below ${s.settings.moderate_at}%, Moderate from ${s.settings.moderate_at}%, High from ${s.settings.high_at}% of the floor occupied.`;
     drawDashChart();
-    if (timer) clearInterval(timer);
-    timer = setInterval(refresh, Math.max(2, s.settings.refresh_s) * 1000);
   }
 
   function drawDashChart() {
@@ -662,11 +661,14 @@
     return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(",")})`;
   }
   async function loadLive() {
-    if (document.querySelector('[data-page="dashboard"]').hidden) return;
-    try { live = await getJSON("/api/live"); } catch (e) { return; }
-    drawGrids();
+    if (streamConnected || document.hidden || document.querySelector('[data-page="dashboard"]').hidden) return;
+    try {
+      const frames = await getJSON("/api/live");
+      if (streamConnected) return;
+      live = frames;
+    } catch (e) { return; }
+    if (!document.hidden) drawGrids();
   }
-  setInterval(loadLive, 1000);
 
   // ---------------------------------------------------------------- history
   const hubNow = () => state ? parseT(state.now) : new Date();     // the hub's clock, not the phone's
@@ -848,15 +850,63 @@
   function chartSvg() { return `<svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 16v-3M12 16V8M16 16v-5"/></svg>`; }
 
   // ---------------------------------------------------------------- refresh
-  async function refresh() {
-    try { renderState(await getJSON("/api/state")); }
-    catch (e) { $("updated").innerHTML = `<span class="dot stale"></span>Hub unreachable. Check you're on the station Wi-Fi.`; }
-    if (!document.querySelector('[data-page="forecast"]').hidden) loadForecast();
+  function renderSnapshot(s) {
+    if (latestSnapshot && s.rev < latestSnapshot.rev) return;
+    latestSnapshot = s;
+    if (document.hidden) return;
+    if (s.live) live = s.live;
+    renderState(s);
   }
-  window.addEventListener("resize", () => { drawDashChart(); renderHistory(); renderForecast(); });
+  function stopPolling() {
+    clearInterval(timer); clearInterval(liveTimer);
+    timer = liveTimer = null;
+  }
+  function startPolling() {
+    stopPolling();
+    if (streamConnected || document.hidden) return;
+    timer = setInterval(refresh, Math.max(2, latestSnapshot?.settings.refresh_s || 10) * 1000);
+    liveTimer = setInterval(loadLive, 1000);
+  }
+  function connectStream() {
+    if (!window.EventSource) return;
+    stream = new EventSource("/api/stream");
+    stream.onopen = () => {
+      streamConnected = true;
+      clearTimeout(streamRetry); streamRetry = null;
+      stopPolling();
+    };
+    stream.addEventListener("state", e => {
+      renderSnapshot(JSON.parse(e.data));
+      if (!document.hidden && !document.querySelector('[data-page="forecast"]').hidden) loadForecast();
+    });
+    stream.onerror = () => {
+      streamConnected = false;
+      startPolling(); refresh(); loadLive();
+      if (stream.readyState === EventSource.CLOSED && !streamRetry) {
+        streamRetry = setTimeout(() => { streamRetry = null; connectStream(); }, 15000);
+      }
+    };
+  }
+  async function refresh() {
+    if (streamConnected || document.hidden) return;
+    try {
+      const s = await getJSON("/api/state");
+      if (streamConnected) return;
+      renderSnapshot(s); startPolling();
+    } catch (e) {
+      if (!streamConnected && !document.hidden) $("updated").innerHTML = `<span class="dot stale"></span>Hub unreachable. Check you're on the station Wi-Fi.`;
+    }
+    if (!document.hidden && !document.querySelector('[data-page="forecast"]').hidden) loadForecast();
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { stopPolling(); return; }
+    if (latestSnapshot) renderSnapshot(latestSnapshot);
+    startPolling(); refresh(); loadLive();
+  });
+  window.addEventListener("resize", () => { if (!document.hidden) { drawDashChart(); renderHistory(); renderForecast(); } });
   initDates();
   showTab(location.hash.slice(1) || "dashboard");
-  refresh();
+  startPolling(); refresh(); loadLive(); connectStream();
 })();
 </script>
 </body>

@@ -138,9 +138,10 @@ class Sensor:
 
 
 class FrameProcessor:
-    def __init__(self):
+    def __init__(self, on_frame=None):
         self.lock = threading.Lock()
         self.sensors = {}
+        self.on_frame = on_frame
         t = threading.Thread(target=self._flusher, daemon=True)
         t.start()
 
@@ -157,6 +158,8 @@ class FrameProcessor:
             with con:
                 self._get(dev).process(d, s, now, con, rx_ms, seq)
             con.close()
+        if self.on_frame:
+            self.on_frame()
 
     def recalibrate(self, devs):
         with self.lock:
@@ -165,7 +168,8 @@ class FrameProcessor:
 
     def live(self):
         with self.lock:
-            return {dev: dict(sen.last, background=sen.background) for dev, sen in self.sensors.items()
+            return {dev: dict(sen.last, background=sen.background[:] if sen.background is not None else None)
+                    for dev, sen in self.sensors.items()
                     if sen.last}
 
     def _flusher(self):

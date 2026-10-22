@@ -38,3 +38,22 @@ browser polling at 1 s sees 0 to 1 s.
 
 The running node firmware (v0) sends no `seq`, so on the Pi this probe can only report `age_at_fetch_ms`
 until the node firmware adds it.
+
+## 2026-10-22: live push, gateway 1.2.0, local laptop under load
+
+Setup: Windows 11 laptop, gateway `1.2.0`, Python `3.13.14`, Waitress `3.0.2` with 8 threads at
+`127.0.0.1:8090`. Four fake nodes (`platform-A` to `D`) at 2 Hz with `seq`, all four stream slots held by
+probes, plus the bench client (`tools/fake_bench.py`) and a 1 s poller at the same time. NOT the Raspberry Pi
+and NOT a real node. Stream figures use the snapshot's `now_ms`, so delivery and browser rendering are not
+included (localhost delivery is negligible).
+
+| Run | Printed output (verbatim) |
+| --- | --- |
+| `latency_probe.py --stream --duration 95` (each of 4) | `stream; responses=761; errors=none; frames shown=191; frames skipped=0; resets=0; frame_to_screen_ms min=4 / median=5 / p95=7 / max=13 (n=190); age_at_fetch_ms min=4 / median=5 / p95=7 / max=46; stream connections=1` |
+| `latency_probe.py --interval 1 --duration 85` (polling fallback) | `interval=1 s; responses=85; errors=none; frames shown=85; frames skipped=84; resets=0; frame_to_screen_ms min=35 / median=294 / p95=546 / max=552 (n=168); age_at_fetch_ms min=35 / median=37 / p95=47 / max=52; mean /api/state request time=1.099 ms` |
+| `fake_bench.py --duration 85` | `polls=85; valid=85; errors=none; response_ms median=3.1 / p95=21.0 / max=26.0; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]` |
+| `fake_node.py --hz 2 --duration 130` (each of 4) | `frames sent=260; failures=0` (mean POST 3.3 to 5.4 ms) |
+
+Reading: with the dashboard on the stream, frame-to-screen falls from a median of 4575 ms (10 s polling
+baseline) to 5 ms, p95 from 9075 ms to 7 ms, with no skipped frames. The bench's `/api/display` stays at
+26 ms worst case with every stream slot taken, well inside its 250 ms timeout.
