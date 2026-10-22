@@ -14,6 +14,7 @@ import json
 import os
 import statistics
 import threading
+import time
 from datetime import datetime, timedelta
 
 import store
@@ -93,12 +94,13 @@ class Sensor:
             json.dump({"background": bg, "saved": datetime.now().strftime(TS_FMT)}, f)
 
     # ---- per frame
-    def process(self, d, s, now, con):
+    def process(self, d, s, now, con, rx_ms, seq=None):
         self.last_seen = now
         if self.background is None:
             self._learn(d, s)
             self.last = {"d": d, "s": s, "occ": [False] * 64, "people": 0,
-                         "calibrating": True, "calib_progress": len(self.calib), "t": now.strftime(TS_FMT)}
+                         "calibrating": True, "calib_progress": len(self.calib), "t": now.strftime(TS_FMT),
+                         "rx_ms": rx_ms, "seq": seq}
             return
         bg = self.background
         valid = [s[i] in VALID_STATUS and d[i] > 0 and bg[i] > 0 for i in range(64)]
@@ -111,7 +113,7 @@ class Sensor:
         people = estimate_people(occ)
         occ_pct = n_occ * 100.0 / 64
         self.last = {"d": d, "s": s, "occ": occ, "people": people, "occupancy_pct": round(occ_pct, 1),
-                     "calibrating": False, "t": now.strftime(TS_FMT)}
+                     "calibrating": False, "t": now.strftime(TS_FMT), "rx_ms": rx_ms, "seq": seq}
 
         minute = now.strftime("%Y-%m-%d %H:%M")
         if self.bucket and minute != self.bucket:
@@ -147,12 +149,13 @@ class FrameProcessor:
             self.sensors[dev] = Sensor(dev)
         return self.sensors[dev]
 
-    def add(self, dev, d, s):
+    def add(self, dev, d, s, seq=None):
         now = datetime.now()
+        rx_ms = int(time.time() * 1000)
         with self.lock:
             con = store.connect()
             with con:
-                self._get(dev).process(d, s, now, con)
+                self._get(dev).process(d, s, now, con, rx_ms, seq)
             con.close()
 
     def recalibrate(self, devs):
