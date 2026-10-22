@@ -2,8 +2,8 @@
 
 The turnstile bench (ESP32-S3 gate with TFT, servo, RGB light, buzzer and tap sensor) reads the gateway's
 `/api/display`. Every gateway change must keep this contract so the bench plugs in with no changes on either
-side. `rpi/tests/test_bench_contract.py` checks it on every run; `rpi/tools/fake_bench.py` rehearses it
-against a running gateway.
+side. `rpi/tests/test_bench_contract.py` checks the response shape and gate behaviour on every test run;
+`rpi/tools/fake_bench.py` rehearses the full exchange, including timing, against a running gateway.
 
 ## What the bench sends
 
@@ -22,8 +22,9 @@ against a running gateway.
     the bench).
   - Other keys (`title`, `levels`, `lang`, `zone`) are allowed and ignored by the bench.
 - `/api/display` must answer for any `Host` header (the captive-portal redirect must never apply to it).
-- Answer well inside 250 ms under load: with every open dashboard stream, every node posting, and a forecaster
-  refit running.
+- Answer quickly under load (every open dashboard stream, every node posting, a forecaster refit running).
+  The bench enforces 250 ms per idle gap, not a total deadline, but a slow answer is a dropped poll waiting to
+  happen; `fake_bench.py` reports the total response time so it can be watched.
 
 Anything else (non-200, missing or oversized length, short body, bad JSON, unknown gate value, more than 4
 lines) is not a valid heartbeat. After 30 s without a valid response the bench enters its fail-safe (taps
@@ -50,7 +51,8 @@ From the bench build guide (bench test checklist, steps 2, 3 and 5):
 
 ## Rehearse
 
-On the gateway itself or from a laptop on the same network:
+From a repository checkout on a laptop on the same network (`setup.sh` does not install `tools/` on the Pi;
+copy `rpi/tools/fake_bench.py` there to run it on the Pi itself):
 
 ```
 python tools/fake_bench.py --url http://10.42.0.1/api/display --duration 60
@@ -63,4 +65,4 @@ It prints valid polls, errors by kind, response time and the longest gap between
 
 | Date | Gateway | Where | Result (verbatim) |
 | --- | --- | --- | --- |
-| 2026-10-22 | 1.1.0 (running Pi, before the revamp) | laptop over LAN, `--url http://192.168.254.155/api/display --duration 30` | `polls=30; valid=30; errors=none; response_ms median=12.6 / p95=31.3 / max=31.6; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]` |
+| 2026-10-22 | 1.1.0 (running Pi, before the revamp) | laptop over LAN, `--url http://192.168.254.155/api/display --duration 30` | `polls=30; valid=30; errors=none; response_ms median=23.6 / p95=33.8 / max=40.1; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]` |

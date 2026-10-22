@@ -28,6 +28,8 @@ class BenchContractTest(unittest.TestCase):
     def setUp(self):
         self.client = app.app.test_client()
         cfg.reset()
+        with app._gate_lock:                      # each test starts with the gate open
+            app._gate.update(closed=False, since=None)
         with app.processor.lock:
             app.processor.sensors.clear()
         for _ in range(30):                       # empty-floor calibration

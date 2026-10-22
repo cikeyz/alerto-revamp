@@ -1,7 +1,13 @@
-"""Poll /api/display exactly like the turnstile bench firmware and report what it would see."""
+"""Poll /api/display the way the turnstile bench firmware does and report what it would see.
+
+Mirrors pollGateway(): new connection, HTTP/1.0, 250 ms connect and read idle timeouts, the status and
+Content-Length checks before reading the body, then exactly Content-Length bytes. The 30 s fail-safe gap is
+measured between completed valid responses, as the bench does.
+"""
 import argparse
 import json
 import math
+import re
 import socket
 import statistics
 import time
@@ -11,35 +17,48 @@ TIMEOUT_S = 0.25      # bench GATEWAY_HTTP_TIMEOUT_MS: connect and read idle tim
 MAX_BYTES = 512       # bench GATEWAY_RESPONSE_MAX_BYTES
 MAX_LINES = 4         # bench GUIDANCE_LINES
 FAILSAFE_S = 30       # bench FAILSAFE_MS
+HEAD_LIMIT = 4096
+
+
+def to_int(value):
+    """Arduino String::toInt(): leading integer, otherwise 0."""
+    m = re.match(r"\s*([+-]?\d+)", value or "")
+    return int(m.group(1)) if m else 0
 
 
 def poll(host, port, path, host_header):
-    """One bench poll: new connection, HTTP/1.0, Content-Length required. Returns (doc, error)."""
+    """One bench poll. Returns (doc, error)."""
     try:
         with socket.create_connection((host, port), timeout=TIMEOUT_S) as s:
             s.settimeout(TIMEOUT_S)
             s.sendall(f"GET {path} HTTP/1.0\r\nHost: {host_header}\r\nConnection: close\r\n\r\n".encode())
             raw = b""
-            while chunk := s.recv(4096):
+            while b"\r\n\r\n" not in raw:
+                chunk = s.recv(1024)
+                if not chunk or len(raw) > HEAD_LIMIT:
+                    return None, "no headers"
                 raw += chunk
+            head, _, body = raw.partition(b"\r\n\r\n")
+            lines = head.decode("latin-1").split("\r\n")
+            parts = lines[0].split(" ")
+            status = parts[1] if len(parts) > 1 else "?"
+            headers = {k.strip().lower(): v.strip() for k, _, v in (h.partition(":") for h in lines[1:])}
+            size = to_int(headers.get("content-length"))
+            if status != "200" or size <= 0 or size > MAX_BYTES:
+                return None, f"status {status}" if status != "200" else f"content-length {size}"
+            while len(body) < size:              # read exactly Content-Length bytes, as the bench does
+                chunk = s.recv(size - len(body))
+                if not chunk:
+                    return None, "incomplete body"
+                body += chunk
+            body = body[:size]
     except OSError as e:
         return None, f"socket: {e.__class__.__name__}"
-    head, _, body = raw.partition(b"\r\n\r\n")
-    lines = head.decode("latin-1").split("\r\n")
-    status = lines[0].split(" ")[1] if len(lines[0].split(" ")) > 1 else "?"
-    if status != "200":
-        return None, f"status {status}"
-    headers = {k.strip().lower(): v.strip() for k, _, v in (h.partition(":") for h in lines[1:])}
-    size = int(headers.get("content-length", "0") or 0)
-    if size <= 0 or size > MAX_BYTES:
-        return None, f"content-length {size}"
-    if len(body) != size:
-        return None, "incomplete body"
     try:
         doc = json.loads(body)
     except ValueError:
         return None, "bad json"
-    if doc.get("gate") not in ("open", "closed"):
+    if not isinstance(doc, dict) or doc.get("gate") not in ("open", "closed"):
         return None, "bad gate"
     if not isinstance(doc.get("lines"), list) or len(doc["lines"]) > MAX_LINES \
             or not all(isinstance(x, str) for x in doc["lines"]):
@@ -57,20 +76,21 @@ def main():
     url = urlsplit(args.url)
     port = url.port or 80
     valid, errors, times, changes = 0, {}, [], []
-    last_valid = start = time.monotonic()
+    start = last_valid = time.monotonic()
     worst_gap, gate = 0.0, None
     while time.monotonic() - start < args.duration:
         t0 = time.monotonic()
         doc, err = poll(url.hostname, port, url.path or "/", args.host_header)
+        done = time.monotonic()
         if err:
             errors[err] = errors.get(err, 0) + 1
         else:
             valid += 1
-            times.append((time.monotonic() - t0) * 1000)
-            worst_gap = max(worst_gap, t0 - last_valid)
-            last_valid = t0
+            times.append((done - t0) * 1000)
+            worst_gap = max(worst_gap, done - last_valid)
+            last_valid = done                    # the bench's fail-safe clock restarts on completion
             if doc["gate"] != gate:
-                changes.append((round(t0 - start, 1), doc["gate"]))
+                changes.append((round(done - start, 1), doc["gate"]))
                 gate = doc["gate"]
         time.sleep(max(0, args.interval - (time.monotonic() - t0)))
     worst_gap = max(worst_gap, time.monotonic() - last_valid)
