@@ -26,8 +26,8 @@ No end-to-end latency has been measured yet; the figures above are bounds from t
   `/api/state` 12 ms, `/api/live` 6 ms, `/api/display` 7 ms, `/api/forecast` 13 ms. Server work per request
   is not the bottleneck; the polling intervals are.
 - Dashboard `refresh_s` is 10 on the running gateway. Node `platform-A` delivers one frame per second.
-- Node v0 log: 6.4 s from power-on to ranging (2.0 s I2C scan, 2.9 s sensor firmware load), Wi-Fi RSSI -66
-  to -67 dBm at 8.5 dBm TX power, 14 of 14 POSTs OK, CPU at 80 MHz.
+- Node v0 log: 6.4 s from power-on to ranging (2.0 s I2C scan, 2.9 s sensor firmware load), Wi-Fi RSSI -70 dBm
+  at association and -66 to -68 dBm while running, at 8.5 dBm TX power, 14 of 14 POSTs OK, CPU at 80 MHz.
 
 ## Software (now)
 
@@ -74,8 +74,10 @@ speed.
 - **C3. One noisy frame can switch the gate.** Occupancy is computed per frame with no smoothing, and the gate
   has only a 5-point hysteresis and no minimum time in a state. Fix: smooth over a few seconds and require a
   minimum dwell before switching. Also decide which rule governs: the gateway closes when every segment with
-  data is at or above High and reopens 5 points below it, while the Chapter 3 policy used by the simulator
-  holds at two segments >= 85% and releases strictly below 80%.
+  data is at or above High (percent of floor zones occupied) and reopens 5 points below it, while the
+  Chapter 3 policy the simulator implements counts people: Hold at the aggregate Hold count or when two
+  segments reach the 85% per-segment trigger, release only when the aggregate is at or below the release
+  count and no segment trigger is active (mock platform: 61 of 64, 14 of 16 per segment, 51 of 64).
 - **C4. The dashboard mixes two snapshots.** The 8x8 grids come from `/api/live` (1 s) but their colour, the
   tiles and the frame-age check come from `/api/state` (10 s). The grid can show a crowd while the tile still
   says Low, and "No new frames" is computed against a state clock that may be 10 s old, so it can appear
@@ -87,7 +89,8 @@ speed.
 - **C6. Any client on the open hotspot can feed or flood the gateway.** The running node's key is in this
   public repository, and `/frame` creates a new sensor and database rows for any `device_id`. A spoofed or
   misconfigured node can close the gate. Fix: rotate `DEVICE_KEY`, move the node key out of source into a
-  gitignored header, and accept only device ids assigned in Settings.
+  gitignored header, and accept only device ids assigned in Settings. The v0 backup image carries the old
+  key too, so restoring it after a rotation needs the old key re-enabled or a rebuilt image.
 - **R1. Node self-recovery.** No reboot if Wi-Fi or HTTP stays broken; add the ESP32 task watchdog and a
   reboot after a set time without a successful POST.
 - **R2. Gate display fail-safe is late.** Its `ensureWiFi()` blocks for up to 8 s per poll, so the 15 s
@@ -101,16 +104,18 @@ speed.
   at 400 kHz).
 - **S2. Node CPU at 80 MHz.** 160 or 240 MHz shortens frame building and network handling; check supply
   current first (see the hardware section).
-- **S3. Raise Wi-Fi TX power after ranging starts.** RSSI is -66 to -67 dBm at 8.5 dBm TX, so lost packets
+- **S3. Raise Wi-Fi TX power after ranging starts.** RSSI is -66 to -70 dBm at 8.5 dBm TX, so lost packets
   and retries are likely under load. Raise it in stages and watch the reset reason for brownouts.
 - **S4. Hotspot channel.** Fixed at 2.4 GHz channel 6 in `setup.sh`. In a busy room this channel may be
   congested; make it configurable and check the site before a demo.
-- **S5. Faster offline alerts.** 15 s before a segment counts as offline; 3 to 5 s is enough at 1 to 2 Hz
-  (with C1).
+- **S5. Faster offline alerts.** The live path drops a segment's frames after 15 s, but the segment then
+  stays online on the minute fallback for up to 3 minutes (C1). 3 to 5 s is enough at 1 to 2 Hz; this
+  lands with C1.
 - **S6. Settings tab query.** `SELECT DISTINCT device_id FROM readings WHERE frames >= 0` cannot use the
   existing indexes for the `frames` filter, and at 90-day retention with 4 nodes the table reaches about
   518,000 rows. Unmeasured; track known devices separately or add an index.
-- **S7. Forecaster load.** Refits (ARIMA order search, Prophet) run on the same Pi every 6 h and at start.
+- **S7. Forecaster load.** SARIMAX and Prophet refit on the same Pi every 6 h and at start; the
+  ARIMA order search re-runs weekly.
   Measure web latency during a refit; cap the forecaster's CPU if it slows the gateway.
 - **S8. Dashboard housekeeping.** Pause polling and drawing when the tab is hidden, and skip chart redraws
   when the data has not changed.
