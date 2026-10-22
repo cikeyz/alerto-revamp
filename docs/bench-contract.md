@@ -50,6 +50,9 @@ From the bench build guide (bench test checklist, steps 2, 3 and 5):
 - Do not change the hotspot name, password, address or port without updating the bench's `secrets.h` or
   `config.h`. Not before 2026-10-27.
 - A deploy restarts `density-web` for a few seconds; the bench rides through anything under 30 s.
+- Dashboard streams hold one of Waitress's 8 worker threads each and are capped at 4, leaving 4 for nodes, the
+  bench and ordinary requests. Do not raise the stream cap without raising `--threads` in `setup.sh` and
+  re-running `fake_bench.py` under load.
 
 ## Rehearse
 
