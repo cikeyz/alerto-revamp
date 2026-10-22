@@ -76,8 +76,9 @@ speed.
   minimum dwell before switching. Also decide which rule governs: the gateway closes when every segment with
   data is at or above High (percent of floor zones occupied) and reopens 5 points below it, while the
   Chapter 3 policy the simulator implements counts people: Hold at the aggregate Hold count or when two
-  segments reach the 85% per-segment trigger, release only when the aggregate is at or below the release
-  count and no segment trigger is active (mock platform: 61 of 64, 14 of 16 per segment, 51 of 64).
+  segments reach the 85% per-segment trigger, leave Hold (to Metered) only when the aggregate is at or below
+  the release count, no segment trigger or forecast trigger is active, and staff confirm the release (mock
+  platform: 61 of 64, 14 of 16 per segment, 51 of 64).
 - **C4. The dashboard mixes two snapshots.** The 8x8 grids come from `/api/live` (1 s) but their colour, the
   tiles and the frame-age check come from `/api/state` (10 s). The grid can show a crowd while the tile still
   says Low, and "No new frames" is computed against a state clock that may be 10 s old, so it can appear
@@ -104,7 +105,7 @@ speed.
   at 400 kHz).
 - **S2. Node CPU at 80 MHz.** 160 or 240 MHz shortens frame building and network handling; check supply
   current first (see the hardware section).
-- **S3. Raise Wi-Fi TX power after ranging starts.** RSSI is -66 to -70 dBm at 8.5 dBm TX, so lost packets
+- **S3. Raise Wi-Fi TX power after ranging starts.** RSSI is -66 to -68 dBm while running (-70 at association) at 8.5 dBm TX, so lost packets
   and retries are likely under load. Raise it in stages and watch the reset reason for brownouts.
 - **S4. Hotspot channel.** Fixed at 2.4 GHz channel 6 in `setup.sh`. In a busy room this channel may be
   congested; make it configurable and check the site before a demo.
