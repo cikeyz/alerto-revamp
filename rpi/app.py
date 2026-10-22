@@ -24,6 +24,7 @@ Production: waitress-serve --listen=0.0.0.0:80 app:app   Dev: python app.py --po
 """
 import hmac
 import json
+import math
 import os
 import socket
 import textwrap
@@ -45,7 +46,9 @@ PORTAL_NAME = os.environ.get("PORTAL_NAME", "alerto.lan").lower()
 DEVICE_KEY = os.environ.get("DEVICE_KEY", "")
 ADMIN_PIN = os.environ.get("ADMIN_PIN", "")
 TS = "%Y-%m-%d %H:%M:%S"
-VERSION = "1.2.0"
+VERSION = "1.2.1"
+SNAPSHOT_MAX_AGE_S = 10
+FORECAST_POINT_MAX_AGE = timedelta(minutes=10)
 
 _hn = socket.gethostname().lower()
 ALLOWED_HOSTS = {PORTAL_IP, PORTAL_NAME, "localhost", "127.0.0.1", _hn, f"{_hn}.local"}
@@ -178,24 +181,63 @@ def segment_states(s, now, live):
     return out
 
 
-def forecast_view(fc, model):
+def forecast_is_stale(fc, now):
+    if fc is None:
+        return False
+    try:
+        return datetime.fromisoformat(fc["generated_at"]) < now - timedelta(minutes=15)
+    except (KeyError, TypeError, ValueError):
+        return True
+
+
+def forecast_view(fc, model, now):
     """{seg: {"next5": v, "points": [(t, v)]}} for one model."""
     out = {}
-    for seg, d in (fc or {}).get("segments", {}).items():
-        pts = d["models"].get(model)
-        if pts:
+    if not isinstance(fc["segments"], dict):
+        raise ValueError("invalid forecast segments")
+    for seg, d in fc["segments"].items():
+        if not isinstance(d["history"], list) or not isinstance(d["models"], dict):
+            raise ValueError("invalid segment forecast")
+        for points in [d["history"], *d["models"].values()]:
+            if not isinstance(points, list):
+                raise ValueError("invalid forecast points")
+            for p in points:
+                if datetime.fromisoformat(p["t"]).tzinfo is not None:
+                    raise ValueError("forecast time must be local")
+                if type(p["v"]) not in (int, float) or not math.isfinite(p["v"]):
+                    raise ValueError("invalid forecast value")
+        pts = d["models"].get(model, [])
+        if pts and datetime.fromisoformat(pts[0]["t"]) >= now - FORECAST_POINT_MAX_AGE:
             out[seg] = {"next5": pts[0]["v"], "points": pts}
     return out
+
+
+def load_forecast(now, model=None):
+    fc = read_json("forecast.json")
+    status = read_json("status.json")
+    status = status if isinstance(status, dict) else {}
+    stale = forecast_is_stale(fc, now)
+    fv = {}
+    if fc is not None and not stale:
+        try:
+            model = model or fc.get("active_model")
+            fv = forecast_view(fc, model, now)
+            stale = not fv and any(d["models"].get(model) for d in fc["segments"].values())
+        except (AttributeError, KeyError, TypeError, ValueError, OverflowError):
+            fv, stale = {}, True
+    if stale:
+        status = dict(status, stale=True)
+    return fc if fv else None, fv, status
 
 
 def recommend(segs, fv):
     cand = [g for g in segs if g["occupancy_pct"] is not None]
     if not cand:
         return None
-    key = lambda g: fv.get(g["id"], {}).get("next5", g["occupancy_pct"])
-    best = min(cand, key=key)
-    return {"id": best["id"], "now": best["occupancy_pct"], "next5": round(key(best), 1),
-            "basis": "forecast" if best["id"] in fv else "current"}
+    best = min(cand, key=lambda g: g["occupancy_pct"])
+    next5 = fv.get(best["id"], {}).get("next5", best["occupancy_pct"])
+    return {"id": best["id"], "now": best["occupancy_pct"], "next5": round(next5, 1),
+            "basis": "current"}
 
 
 def update_gate(segs, s):
@@ -233,9 +275,8 @@ def build_state(live):
     now = datetime.now()
     segs = segment_states(s, now, live)
     now_ms = int(time.time() * 1000)  # after reading frames, so now_ms >= every rx_ms in this state
-    fc = read_json("forecast.json")
+    fc, fv, forecast_status = load_forecast(now)
     model = (fc or {}).get("active_model")
-    fv = forecast_view(fc, model) if model else {}
     have = [g["occupancy_pct"] for g in segs if g["occupancy_pct"] is not None]
     platform = round(sum(have) / len(have), 1) if have else None
     rec = recommend(segs, fv)
@@ -265,7 +306,7 @@ def build_state(live):
                                          + "Monitor entry gates closely."})
                 break
     if gate["closed"]:
-        alerts.insert(0, {"kind": "gate", "seg": None, "title": "Entry gate closed: every segment is High",
+        alerts.insert(0, {"kind": "gate", "seg": None, "title": "Entry gate closed: reporting segments reached High",
                           "detail": "It reopens when any segment drops 5 points below the High threshold."})
     return {
         "now": now.strftime(TS), "now_ms": now_ms, "clock_ok": now.year >= 2025, "version": VERSION,
@@ -277,7 +318,7 @@ def build_state(live):
             "model": model, "generated_at": fc.get("generated_at"),
             "segments": {seg: {"history": fc["segments"][seg]["history"][-3:], "points": d["points"]}
                          for seg, d in fv.items()}},
-        "forecast_status": read_json("status.json") or {},
+        "forecast_status": forecast_status,
         "admin_enabled": bool(ADMIN_PIN),
     }
 
@@ -287,7 +328,7 @@ STREAM_MIN_GAP_S = 0.25
 
 
 class NotReady(Exception):
-    """No crowd state has been built yet (startup, or every rebuild so far failed)."""
+    """No recent successful crowd state is available."""
 
 
 class StateBuilder:
@@ -295,6 +336,7 @@ class StateBuilder:
         self.condition = threading.Condition()
         self.interval = interval
         self.current = None
+        self.last_successful_rebuild = None
         self.requested = self.completed = 0
         self.pending = True
         self.stopped = False
@@ -321,7 +363,7 @@ class StateBuilder:
             # slow or stuck rebuild never pushes /api/display past the bench's 250 ms read timeout
             self.condition.wait_for(lambda: self.current is not None and self.completed >= wanted,
                                     timeout=timeout)
-            if self.current is None:
+            if self.current is None or time.monotonic() - self.last_successful_rebuild > SNAPSHOT_MAX_AGE_S:
                 raise NotReady()          # answered as a fast 503, never a long wait
             return self.current
 
@@ -358,6 +400,7 @@ class StateBuilder:
                     state["rev"] = self.current["state"]["rev"] + 1 if self.current else 1
                     state["boot"] = BOOT_ID   # rev restarts with the process; clients compare within a boot
                     self.current = {"state": state, "live": live}
+                    self.last_successful_rebuild = time.monotonic()
             finally:
                 with self.condition:
                     self.completed = wanted
@@ -453,21 +496,21 @@ def calendar_context(now):
 
 @app.get("/api/forecast")
 def api_forecast():
-    fc = read_json("forecast.json")
     now = datetime.now()
-    status = read_json("status.json") or {}
+    fc, fv, status = load_forecast(now, request.args.get("model"))
     if not fc:
         return jsonify({"ready": False, "status": status, "calendar": calendar_context(now)})
     model = request.args.get("model") or fc.get("active_model")
     segs = {}
-    for seg, d in fc["segments"].items():
-        segs[seg] = {"history": d["history"], "points": d["models"].get(model, []),
+    for seg, view in fv.items():
+        d = fc["segments"][seg]
+        segs[seg] = {"history": d["history"], "points": view["points"],
                      "all": {m: v for m, v in d["models"].items()}}
     s = cfg.load()
     nxt = {seg: v["points"][0]["v"] for seg, v in segs.items() if v["points"]}
     least = min(nxt, key=nxt.get) if nxt else None
     return jsonify({
-        "ready": True, "status": status, "model": model, "best_model": fc.get("best_model"),
+        "ready": bool(nxt), "status": status, "model": model, "best_model": fc.get("best_model"),
         "active_model": fc.get("active_model"), "auto": s["active_model"] == "auto",
         "generated_at": fc.get("generated_at"), "fitted_at": fc.get("fitted_at"),
         "orders": fc.get("orders"), "metrics": fc.get("metrics", {}), "segments": segs,

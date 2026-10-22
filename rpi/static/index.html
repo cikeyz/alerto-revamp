@@ -12,6 +12,7 @@
     --mod: #D9781E;  --mod-bg: #FDF0C7;  --mod-line: #E0913C;
     --high: #D63A2F; --high-bg: #FCE3E3; --high-line: #E2564C;
     --none: #7B8494; --none-bg: #EEF0F4;
+    --low-text: #287032; --mod-text: #8A4B12; --high-text: #B52D24; --none-text: #596271;
     --seg-a: #2563EB; --seg-b: #9333EA; --seg-c: #0F9488; --seg-d: #DB2777; --avg: #334155;
     --font: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", system-ui, sans-serif;
   }
@@ -57,11 +58,11 @@
   /* level boxes */
   .lvlbox { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 20px; border: 2px solid; font-weight: 700; }
   .lvlbox .big { font-size: 28px; }
-  .lv-low { color: var(--low); background: var(--low-bg); border-color: var(--low-line); }
-  .lv-moderate { color: var(--mod); background: var(--mod-bg); border-color: var(--mod-line); }
-  .lv-high { color: var(--high); background: var(--high-bg); border-color: var(--high-line); }
-  .lv-unknown { color: var(--none); background: var(--none-bg); border-color: var(--line); }
-  .t-low { color: var(--low); } .t-moderate { color: var(--mod); } .t-high { color: var(--high); } .t-unknown { color: var(--none); }
+  .lv-low { color: var(--low-text); background: var(--low-bg); border-color: var(--low-line); }
+  .lv-moderate { color: var(--mod-text); background: var(--mod-bg); border-color: var(--mod-line); }
+  .lv-high { color: var(--high-text); background: var(--high-bg); border-color: var(--high-line); }
+  .lv-unknown { color: var(--none-text); background: var(--none-bg); border-color: var(--line); }
+  .t-low { color: var(--low-text); } .t-moderate { color: var(--mod-text); } .t-high { color: var(--high-text); } .t-unknown { color: var(--none-text); }
   .alertlist { display: grid; gap: 8px; }
   .alertlist .lvlbox { font-size: 15px; padding: 12px 16px; justify-content: flex-start; }
   .alertlist .lvlbox small { display: block; font-weight: 400; color: var(--text); margin-top: 2px; }
@@ -260,6 +261,7 @@
         <h2>Platform Status</h2>
         <div class="label">Current density</div>
         <div class="lvlbox lv-unknown" id="d-current"><span>NO DATA</span><span class="big num">—</span></div>
+        <div class="note" id="d-reporting"></div>
         <div class="label">Alerts</div>
         <div class="alertlist" id="d-alerts"></div>
         <div class="label">Entry gate</div>
@@ -545,12 +547,13 @@
     const p = s.platform;
     $("d-current").className = "lvlbox lv-" + p.level;
     $("d-current").innerHTML = `<span>${LVNAME[p.level].toUpperCase()}</span><span class="big num">${pct(p.occupancy_pct)}</span>`;
+    $("d-reporting").textContent = `${s.segments.filter(g => g.occupancy_pct != null).length} of ${s.segments.length} segments reporting`;
     const icon = k => k === "high" || k === "gate" ? "!" : k === "offline" ? "?" : "▲";
     $("d-alerts").innerHTML = s.alerts.length
       ? s.alerts.map(a => `<div class="lvlbox ${a.kind === "forecast" || a.kind === "offline" ? "lv-moderate" : "lv-high"}"><div>${esc(a.title)}<small>${esc(a.detail)}</small></div></div>`).join("")
       : `<div class="lvlbox lv-low" style="justify-content:flex-start;gap:12px">${checkSvg()} NONE</div>`;
     $("d-gate").innerHTML = s.gate.closed
-      ? `<div class="lvlbox lv-high"><span>CLOSED</span><span style="font-weight:400;font-size:14px">All segments High</span></div>`
+      ? `<div class="lvlbox lv-high"><span>CLOSED</span><span style="font-weight:400;font-size:14px">Entry on hold</span></div>`
       : `<div class="lvlbox lv-low"><span>OPEN</span><span style="font-weight:400;font-size:14px">${s.settings ? "" : ""}</span></div>`;
 
     renderTiles(s);
@@ -565,7 +568,7 @@
     $("c-primary").textContent = lang === "fil" ? m.fil : m.en;
     $("c-secondary").textContent = lang === "fil" ? `(${m.en})` : `(${m.fil})`;
     const rec = s.recommendation;
-    $("c-zone").hidden = !rec;
+    $("c-zone").hidden = s.gate.closed || !rec;
     if (rec) {
       const lv = state.segments.find(g => g.id === rec.id)?.level || "unknown";
       $("c-zone-name").textContent = `ZONE ${rec.id}`; $("c-zone-pct").textContent = pct(rec.now); $("c-zone-pct").className = "p num t-" + lv;
@@ -577,14 +580,14 @@
   function drawDashChart() {
     if (!state || document.querySelector('[data-page="dashboard"]').hidden) return;
     const f = state.forecast, th = { moderate: state.settings.moderate_at, high: state.settings.high_at };
-    const segs = f ? Object.keys(f.segments).sort() : [];
+    const segs = f ? Object.keys(f.segments).filter(sg => f.segments[sg].points?.length).sort() : [];
     $("d-legend").innerHTML = legendHTML(segs.map(sg => [`Seg ${sg}`, SEGVAR[sg]]));
     const st = state.forecast_status || {};
     if (!segs.length) {
       $("d-chart").parentElement.hidden = true; $("d-fc-empty").hidden = false;
       $("d-fc-empty").innerHTML = chartSvg() + (st.state === "collecting"
         ? `Forecasts start after ${st.needed_days} days of sensor data. Collected so far: ${st.data_days} days.`
-        : "Waiting for the first forecast run.");
+        : st.stale ? "Forecast paused: waiting for recent data." : "Waiting for the first forecast run.");
       $("d-fc-alert").innerHTML = ""; return;
     }
     $("d-chart").parentElement.hidden = false; $("d-fc-empty").hidden = true;
@@ -745,9 +748,11 @@
       <div class="box"><div class="k">Calendar</div><div class="v">${cal.day_type}, ${cal.weekday}</div><div class="d">${cal.off_day ? "Weekend/holiday daily pattern applied." : "Workday daily pattern applied."}</div></div>
       <div class="box"><div class="k">PH holidays</div><div class="v">${cal.holiday ? esc(cal.holiday) : "None today"}</div><div class="d ${cal.holiday ? "orange" : ""}">${cal.next_holiday ? `Next: ${esc(cal.next_holiday.name)}, ${cal.next_holiday.date}` : ""}</div></div>
       <div class="box"><div class="k">Time of day</div><div class="v">${hubNow().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}</div><div class="d">Rush-hour shape modelled with daily harmonics (ARIMAX, Prophet).</div></div>`;
-    if (!f.ready) {
+    const segs = Object.keys(f.segments || {}).filter(sg => f.segments[sg].points?.length).sort();
+    if (!f.ready || !segs.length) {
       const st = f.status || {};
-      const msg = st.state === "collecting" ? `Forecasts start after ${st.needed_days} days of sensor data. Collected so far: ${st.data_days} days.` : "Waiting for the first forecast run.";
+      const msg = st.state === "collecting" ? `Forecasts start after ${st.needed_days} days of sensor data. Collected so far: ${st.data_days} days.`
+        : st.stale ? "Forecast paused: waiting for recent data." : "Waiting for the first forecast run.";
       $("f-inuse").innerHTML = ""; $("f-metrics").innerHTML = `<p class="empty" style="grid-column:1/-1">${msg}</p>`;
       $("f-chart").parentElement.hidden = true; $("f-empty").hidden = false; $("f-empty").innerHTML = chartSvg() + msg;
       $("f-legend").innerHTML = ""; $("f-base").innerHTML = ""; $("f-reco").innerHTML = `<p class="empty">${msg}</p>`; $("f-updated").textContent = "";
@@ -760,7 +765,6 @@
       <div class="metric"><div class="k">RMSE</div><div class="v blue num">${fx(m.RMSE)}</div></div>
       <div class="metric"><div class="k">Level agreement</div><div class="v num" style="color:var(--low)">${m.agreement == null ? "—" : fx(m.agreement) + "%"}</div></div>`;
     $("f-updated").textContent = f.generated_at ? `Updated: ${f.generated_at.slice(11, 16)} PHT` : "";
-    const segs = Object.keys(f.segments).sort();
     const th = f.thresholds;
     const gen = parseT(f.generated_at).getTime();
     const series = segs.map(sg => {
@@ -783,7 +787,8 @@
     $("f-chart").parentElement.hidden = false; $("f-empty").hidden = true;
     const first = series.length ? Math.min(...series.map(s => s.pts[0]?.[0] ?? Infinity)) : gen;
     const last = series.length ? Math.max(...series.map(s => s.pts.at(-1)?.[0] ?? -Infinity)) : gen;
-    const nowT = f.segments[segs[0]] ? parseT(f.segments[segs[0]].points[0].t).getTime() : gen;
+    const firstPoint = f.segments[segs[0]]?.points?.[0];
+    const nowT = firstPoint ? parseT(firstPoint.t).getTime() : gen;
     chart($("f-chart"), { x0: first - 60e3, x1: last + 60e3, y1: 100, yTicks: [0, 25, 50, 75, 100], bands: bandsFor(th), series, now: nowT, nowColor: css("--mod"),
       tipWindow: 3 * 60e3,
       xTicks: series[0] ? series[0].pts.map(p => ({ x: p[0], label: new Date(p[0] - 150e3).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) })).filter((t, i) => i % 2 === 0) : [] });
