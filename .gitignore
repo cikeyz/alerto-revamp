@@ -2,3 +2,5 @@
 __pycache__/
 rpi/data/
 rpi/outputs/
+esp32_tof_reader/secrets.h
+esp32_tof_reader/build/

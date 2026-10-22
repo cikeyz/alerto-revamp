@@ -56,7 +56,12 @@ VL53L8CX ─ ESP32-S3 node (Node ID) ──Wi-Fi──▶ Raspberry Pi gateway �
 
 ## (a) ESP32-S3 sensor node
 
-**Hardware:** ESP32-S3 DevKit + VL53L8CX breakout.
+**Deployment status (2026-10-22):** V1 with non-blocking USB logging passes a 30-minute
+closed-port soak on the real Pi, followed by the stream and display probes, and remains on the node.
+The two earlier candidates were rolled back to v0. See `docs/latency-log.md` for the measured
+results, USB logging rule, rollback history and safe serial detach.
+
+**Hardware:** ESP32-S3 N16R8 + VL53L8CX breakout.
 
 | VL53L8CX | ESP32-S3 |
 |---|---|
@@ -64,16 +69,47 @@ VL53L8CX ─ ESP32-S3 node (Node ID) ──Wi-Fi──▶ Raspberry Pi gateway �
 | GND | GND |
 | SDA | GPIO8 |
 | SCL | GPIO9 |
-| LPn | 3V3 |
+| LPn / I2C reset | Not wired to ESP32 GPIOs |
 
 **Firmware:** `esp32_tof_reader/esp32_tof_reader.ino`
-- Arduino IDE library: **STM32duino VL53L8CX**.
-- Tools: **ESP32S3 Dev Module**, USB CDC On Boot = Enabled, PSRAM = Disabled, CPU = 80 MHz (WiFi),
-  Flash Size = 4MB.
-- Set `NODE_ID` (unique per node: `platform-A` … `platform-D`) and `NODE_KEY` (= `DEVICE_KEY` on the Pi).
+
+- Arduino library: **STM32duino VL53L8CX 2.1.0**; ESP32 core **3.3.12**.
+- Tools: **ESP32S3 Dev Module**, Flash Size = **16 MB**, Partition Scheme =
+  **16M Flash (3MB APP/9.9MB FATFS)** (`app3M_fat9M_16MB`), Flash Mode = **DIO 80 MHz**,
+  PSRAM = **Disabled**, CPU = **80 MHz (WiFi)**, USB Mode = **Hardware CDC and JTAG**,
+  USB CDC On Boot = **Enabled**, Arduino Runs On = **Core 1**, Events Run On = **Core 1**,
+  Upload Mode = **UART0 / Hardware CDC**, Upload Speed = **921600**, Erase All Flash = **Disabled**.
+- Copy `esp32_tof_reader/secrets.example.h` to `esp32_tof_reader/secrets.h`, then set
+  `WIFI_SSID`, `WIFI_PASS`, `NODE_KEY` and `NODE_ID` there. The local header is gitignored.
+  Use an empty password for an open hotspot. `NODE_ID` is unique per node (`platform-A` to
+  `platform-D`); `NODE_KEY` must match the Pi's `DEVICE_KEY`.
+- Samples **8x8 at 4 Hz**, autonomous mode, **10 ms integration**, I2C **400 kHz**.
+  Sends **every second frame (2 Hz)** to `http://10.42.0.1/frame` with `X-Device-Key` and
+  JSON fields `device_id`, `d[64]`, `s[64]`, `seq`. The network task assigns `seq` from
+  **1 after boot**, increasing by exactly **1 per POST attempt**, including failed attempts.
+- Sensing stays on core 1; the core-0 network task takes the newest frame from a one-slot overwrite queue.
+  Wi-Fi sleep is off, TX power stays at **8.5 dBm**, and HTTP/1.1 connections are reused with a
+  **2000 ms** timeout. Wi-Fi retries use backoff without waiting in the sensing loop.
+- Startup probes **0x29** directly and runs a full diagnostic scan only if that probe fails.
+  Sensor initialization precedes Wi-Fi; ranging starts afterward. The sensor restarts after
+  **3 seconds without frames**, at most once per **10 seconds**. The node logs a reason and reboots
+  after **5 minutes without a successful POST**.
 - Power up with the area under the sensor empty; the gateway learns the empty floor from the first ~30 frames.
-- Serial Monitor (115200 baud) shows the restart reason, an I2C scan, start-up steps and a status line every
-  second. Type `g` for the 8×8 grid, `v` to toggle the status line.
+- Native USB Serial/JTAG logs at **115200 baud** include timestamps and the reset reason, including brownout.
+  Type `g` for the **8x8 grid in cm**, `v` to toggle the once-per-second status line.
+  Valid zones in the logs have status **5 or 9** and distance **greater than 0**.
+  Status includes sent/failed counts, `seq`, last POST duration (`post`, ms), and `lag`
+  (ms from frame ready to POST completion).
+- USB logging uses a zero TX timeout and drops lines unless HWCDC is connected and a whole line
+  fits immediately. Only core 1 prints; network results cross a short numeric snapshot, with no
+  logging lock or queue. If `seq` does not advance for 10 seconds while Wi-Fi is up, the network
+  task restarts the HTTP client. The 5-minute successful-POST watchdog remains active.
+
+Build FQBN used for the real node:
+
+```text
+esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,CPUFreq=80,FlashMode=dio,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=disabled,LoopCore=1,EventsCore=1,EraseFlash=none
+```
 
 ---
 
@@ -95,12 +131,13 @@ sudo ./setup.sh
 ### Communication and message format (summary)
 ⏳ A full protocol document is not yet done. Current messages:
 
-**Node → gateway**, once per second: `POST http://10.42.0.1/frame`, header `X-Device-Key: <DEVICE_KEY>`
+**Node → gateway**, twice per second (2 Hz): `POST http://10.42.0.1/frame`, header `X-Device-Key: <DEVICE_KEY>`
 ```json
 {"device_id": "platform-A", "d": [64 distances in mm], "s": [64 VL53L8CX target status codes], "seq": 123}
 ```
-`device_id` is the Node ID. `seq` is optional: a whole number that increases by exactly 1 per frame (restart from
-1 after a reboot). It lets the gateway's latency probe measure every frame (`docs/latency-log.md`). A number longer than 4300 digits
+`device_id` is the Node ID. `seq` is optional: a whole number that increases by 1 per POST attempt (restart from
+1 after a reboot), so a gap at the gateway means a frame that did not arrive. It lets the gateway's latency
+probe measure received frames (`docs/latency-log.md`). A number longer than 4300 digits
 fails JSON parsing and the frame is rejected, so keep it a plain counter. Replies: `200` OK, `403` wrong key, `400` malformed frame.
 
 **Gateway → diorama ESP32**, poll every 1–2 s: `GET http://10.42.0.1/api/display`

@@ -1,7 +1,9 @@
 """Measure receive-to-screen frame latency using the gateway clock (see docs/latency-log.md).
 
-frame_to_screen_ms needs nodes that send `seq` incremented by exactly 1 per frame; without it only
-age_at_fetch_ms is meaningful and the probe says so.
+frame_to_screen_ms needs nodes that increase `seq` by 1 per POST attempt, so a gap at the gateway means
+a frame that did not arrive. Stream mode counts gaps as lost without interpolating latency samples;
+polling mode keeps interpolation because fetches mostly skip frames. Without `seq` only age_at_fetch_ms
+is meaningful and the probe says so.
 """
 import argparse
 import csv
@@ -21,10 +23,11 @@ STREAM_READ_TIMEOUT_S = 20
 class Tracker:
     """Turns successive /api/state snapshots of one segment into per-frame latency samples."""
 
-    def __init__(self, interval_s):
+    def __init__(self, interval_s, interpolate=True):
         self.interval_ms = interval_s * 1000
+        self.interpolate = interpolate
         self.rows, self.screen = [], []
-        self.skipped = self.resets = 0
+        self.skipped = self.lost = self.resets = 0
         self.no_seq = False
         self.prev_id = self.prev_seq = self.prev_rx = self.prev_now = None
 
@@ -37,7 +40,7 @@ class Tracker:
         age = max(0, now_ms - rx_ms)
         first = self.prev_now is None
         # a fetch gap (probe paused, gateway restart), a seq going down (node reboot), or a seq jump bigger
-        # than the elapsed receive time allows (not a 1-per-frame counter) breaks the chain
+        # than the elapsed receive time allows (not a 1-per-attempt counter) breaks the chain
         broken = (not first and now_ms - self.prev_now > 2 * self.interval_ms + 1000) or \
                  (seq is not None and self.prev_seq is not None and
                   (seq <= self.prev_seq or (seq - self.prev_seq) * MIN_FRAME_MS > rx_ms - self.prev_rx))
@@ -49,10 +52,13 @@ class Tracker:
         elif not first and not broken and self.prev_seq is not None:
             jump = seq - self.prev_seq - 1
             if jump:
-                # shortcut: skipped frames' receive times are interpolated by seq, assumes a steady send rate
-                step = (rx_ms - self.prev_rx) / (seq - self.prev_seq)
-                self.screen.extend(max(0, now_ms - (self.prev_rx + step * k)) for k in range(1, jump + 1))
-                self.skipped += jump
+                if self.interpolate:
+                    # Polling skips frames; interpolate their receive times assuming a steady send rate.
+                    step = (rx_ms - self.prev_rx) / (seq - self.prev_seq)
+                    self.screen.extend(max(0, now_ms - (self.prev_rx + step * k)) for k in range(1, jump + 1))
+                    self.skipped += jump
+                else:
+                    self.lost += jump
             self.screen.append(age)       # the first fetch is warm-up: its frame predates the probe
         self.rows.append((now_ms, rx_ms, seq, age, jump))
         self.prev_id, self.prev_seq, self.prev_rx, self.prev_now = ident, seq, rx_ms, now_ms
@@ -120,7 +126,7 @@ def main():
     end = next_poll + args.duration
     while args.stream and time.monotonic() < end:
         # events come at least once per second (the gateway rebuilds every second), so gaps use 1 s
-        tracker = tracker or Tracker(1)
+        tracker = tracker or Tracker(1, interpolate=False)
         start = time.perf_counter()
         try:
             for body in stream_states(con, path, headers, end):
@@ -208,12 +214,13 @@ def main():
     if args.csv:
         with open(args.csv, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow(("now_ms", "rx_ms", "seq", "age_at_fetch_ms", "skipped"))
+            writer.writerow(("now_ms", "rx_ms", "seq", "age_at_fetch_ms", "lost" if args.stream else "skipped"))
             writer.writerows(tracker.rows)
     mean = statistics.mean(times) if times else 0.0
     mode = "stream" if args.stream else f"interval={interval:g} s"
+    gaps = f"frames lost={tracker.lost}" if args.stream else f"frames skipped={tracker.skipped}"
     print(f"{mode}; responses={responses}; errors={errors or 'none'}; "
-          f"frames shown={len(tracker.rows)}; frames skipped={tracker.skipped}; resets={tracker.resets}; "
+          f"frames shown={len(tracker.rows)}; {gaps}; resets={tracker.resets}; "
           f"frame_to_screen_ms {summary(tracker.screen)} (n={len(tracker.screen)}); "
           f"age_at_fetch_ms {summary(r[3] for r in tracker.rows)}; "
           + (f"stream connections={len(times)}" if args.stream else f"mean /api/state request time={mean:.3f} ms"))
