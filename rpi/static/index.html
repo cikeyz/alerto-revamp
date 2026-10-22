@@ -438,7 +438,7 @@
     Prophet: "Learns the daily and weekly crowd pattern and PH holidays. Ignores the last few minutes, so it reacts slowly to sudden surges.",
   };
   let state = null, settingsData = null, fcData = null, histData = null, fModel = null, timer = null;
-  let stream = null, streamConnected = false, streamRetry = null, liveTimer = null, latestSnapshot = null;
+  let stream = null, streamConnected = false, streamRetry = null, liveTimer = null, latestSnapshot = null, lastEventAt = 0;
   const pct = v => v == null ? "—" : `${Math.round(v)}%`;
   const parseT = s => { const [d, t] = s.split(/[ T]/); const [y, m, dd] = d.split("-").map(Number);
     const [hh, mi, ss] = (t || "0:0").split(":").map(Number); return new Date(y, m - 1, dd, hh, mi, ss || 0); };
@@ -851,7 +851,8 @@
 
   // ---------------------------------------------------------------- refresh
   function renderSnapshot(s) {
-    if (latestSnapshot && s.rev < latestSnapshot.rev) return;
+    // rev restarts when the hub restarts, so only an older snapshot from the same boot is dropped
+    if (latestSnapshot && s.boot === latestSnapshot.boot && s.rev < latestSnapshot.rev) return;
     latestSnapshot = s;
     if (document.hidden) return;
     if (s.live) live = s.live;
@@ -871,11 +872,12 @@
     if (!window.EventSource) return;
     stream = new EventSource("/api/stream");
     stream.onopen = () => {
-      streamConnected = true;
+      streamConnected = true; lastEventAt = Date.now();
       clearTimeout(streamRetry); streamRetry = null;
       stopPolling();
     };
     stream.addEventListener("state", e => {
+      lastEventAt = Date.now();
       renderSnapshot(JSON.parse(e.data));
       if (!document.hidden && !document.querySelector('[data-page="forecast"]').hidden) loadForecast();
     });
@@ -898,6 +900,13 @@
     }
     if (!document.hidden && !document.querySelector('[data-page="forecast"]').hidden) loadForecast();
   }
+  // the hub sends a state event every second; 30 s of silence means a dead link the browser has not noticed
+  setInterval(() => {
+    if (!stream || !streamConnected || Date.now() - lastEventAt < 30000) return;
+    stream.close(); streamConnected = false;
+    startPolling(); refresh(); loadLive();
+    if (!streamRetry) streamRetry = setTimeout(() => { streamRetry = null; connectStream(); }, 15000);
+  }, 5000);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) { stopPolling(); return; }
     if (latestSnapshot) renderSnapshot(latestSnapshot);

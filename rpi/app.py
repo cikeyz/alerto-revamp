@@ -282,6 +282,13 @@ def build_state(live):
     }
 
 
+BOOT_ID = int(time.time() * 1000)
+
+
+class NotReady(Exception):
+    """No crowd state has been built yet (startup, or every rebuild so far failed)."""
+
+
 class StateBuilder:
     def __init__(self, interval=1.0):
         self.condition = threading.Condition()
@@ -291,6 +298,7 @@ class StateBuilder:
         self.pending = True
         self.stopped = False
         self.thread = None
+        self.last_error_log = -60.0
 
     def _start(self):
         if self.thread is None:
@@ -313,9 +321,7 @@ class StateBuilder:
             self.condition.wait_for(lambda: self.current is not None and self.completed >= wanted,
                                     timeout=timeout)
             if self.current is None:
-                self.condition.wait_for(lambda: self.current is not None, timeout=10)
-            if self.current is None:
-                raise RuntimeError("crowd state not built yet")
+                raise NotReady()          # answered as a fast 503, never a long wait
             return self.current
 
     def close(self):
@@ -324,6 +330,8 @@ class StateBuilder:
             self.condition.notify_all()
         if self.thread is not None:
             self.thread.join()
+        with self.condition:              # restartable: the next notify() or get() starts a new thread
+            self.thread, self.stopped = None, False
 
     def _run(self):
         next_update = time.monotonic()
@@ -340,10 +348,13 @@ class StateBuilder:
                 live = processor.live()
                 state = build_state(live)
             except Exception:
-                app.logger.exception("Could not rebuild crowd state")
+                if time.monotonic() - self.last_error_log >= 60:      # at most one traceback a minute
+                    self.last_error_log = time.monotonic()
+                    app.logger.exception("Could not rebuild crowd state")
             else:
                 with self.condition:
                     state["rev"] = self.current["state"]["rev"] + 1 if self.current else 1
+                    state["boot"] = BOOT_ID   # rev restarts with the process; clients compare within a boot
                     self.current = {"state": state, "live": live}
             finally:
                 with self.condition:
@@ -368,9 +379,10 @@ def api_state():
 
 @app.get("/api/stream")
 def api_stream():
+    builder = _state_builder
+    first = builder.get()             # NotReady here is a clean 503 before any stream bytes
     if not _stream_slots.acquire(blocking=False):
         return jsonify(error="Too many streams. Poll /api/state and retry in 15 seconds."), 503
-    builder = _state_builder
     released = False
 
     def release():
@@ -381,7 +393,7 @@ def api_stream():
 
     def generate():
         try:
-            snapshot = builder.get()
+            snapshot = first
             while True:
                 rev = snapshot["state"]["rev"]
                 data = json.dumps(dict(snapshot["state"], live=snapshot["live"]), separators=(",", ":"))
@@ -573,6 +585,11 @@ def backtest_png():
 @app.get("/favicon.ico")
 def favicon():
     return Response(status=204)
+
+
+@app.errorhandler(NotReady)
+def not_ready(_):
+    return jsonify(error="Crowd state is not ready yet. Retry in a second."), 503
 
 
 @app.errorhandler(404)

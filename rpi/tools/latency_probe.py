@@ -70,6 +70,7 @@ def stream_states(con, path, headers, end):
         try:
             raw = resp.readline()
         except TimeoutError:
+            con.close()                   # never reuse a half-read stream connection
             return
         if not raw:
             raise ConnectionError("stream closed")

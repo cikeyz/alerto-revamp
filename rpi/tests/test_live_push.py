@@ -233,5 +233,37 @@ class LivePushTest(unittest.TestCase):
         self.assertEqual(frame["background"][0], 2500)
 
 
+    def test_started_stream_releases_its_slot(self):
+        response = self.client.get("/api/stream", headers=self.headers, buffered=False)
+        chunks = iter(response.response)
+        self.assertTrue(next(chunks).startswith(b"event: state"))
+        self.assertEqual(app._stream_slots._value, 3)
+        response.close()
+        self.assertEqual(app._stream_slots._value, 4)
+
+    def test_not_ready_is_a_fast_503(self):
+        import time
+        with patch.object(app, "build_state", side_effect=RuntimeError("boom")):
+            start = time.monotonic()
+            display = self.client.get("/api/display", headers={"Host": "10.42.0.1"})
+            stream = self.client.get("/api/stream", headers=self.headers, buffered=False)
+            elapsed = time.monotonic() - start
+        self.assertEqual(display.status_code, 503)
+        self.assertEqual(stream.status_code, 503)
+        stream.close()
+        self.assertLess(elapsed, 0.5)
+        self.assertEqual(app._stream_slots._value, 4)
+
+    def test_state_carries_boot_id(self):
+        self.post_frame()
+        app.rebuild_now()
+        self.assertEqual(self.state()["boot"], app.BOOT_ID)
+
+    def test_builder_restarts_after_close(self):
+        first = app.rebuild_now()["rev"]
+        self.builder.close()
+        self.assertGreater(app.rebuild_now()["rev"], first)
+
+
 if __name__ == "__main__":
     unittest.main()
