@@ -12,7 +12,9 @@ clock:
   between two fetches are interpolated from their sequence numbers (assumes a steady send rate). Needs nodes
   that send `seq` incremented by exactly 1 per frame; without it the probe reports only `age_at_fetch_ms`
   and warns. The first fetch is warm-up and not counted; a pause in fetching or a node reboot (seq going
-  down) resets the chain instead of inventing frames (`resets`).
+  down) resets the chain instead of inventing frames (`resets`). So does a seq jump larger than the elapsed
+  receive time allows at 50 Hz, which catches nodes that send a timestamp instead of a counter. A node
+  slower than one frame per `2 x interval + 1 s` would reset on every fetch.
 - `age_at_fetch_ms`: age of the newest frame at each fetch. On its own it understates dashboard latency.
 
 Not covered: sensor acquisition, node processing, Wi-Fi transit, browser rendering.

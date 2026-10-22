@@ -14,6 +14,9 @@ import time
 from urllib.parse import urlsplit
 
 
+MIN_FRAME_MS = 20     # no node sends faster than 50 Hz; a bigger seq jump than this allows is not real
+
+
 class Tracker:
     """Turns successive /api/state snapshots of one segment into per-frame latency samples."""
 
@@ -32,9 +35,11 @@ class Tracker:
             return
         age = max(0, now_ms - rx_ms)
         first = self.prev_now is None
-        # a fetch gap (probe paused, gateway restart) or a seq going down (node reboot) breaks the chain
+        # a fetch gap (probe paused, gateway restart), a seq going down (node reboot), or a seq jump bigger
+        # than the elapsed receive time allows (not a 1-per-frame counter) breaks the chain
         broken = (not first and now_ms - self.prev_now > 2 * self.interval_ms + 1000) or \
-                 (seq is not None and self.prev_seq is not None and seq <= self.prev_seq)
+                 (seq is not None and self.prev_seq is not None and
+                  (seq <= self.prev_seq or (seq - self.prev_seq) * MIN_FRAME_MS > rx_ms - self.prev_rx))
         if broken:
             self.resets += 1
         jump = 0
@@ -102,18 +107,24 @@ def main():
         if resp.status != 200:
             errors[f"HTTP {resp.status}"] = errors.get(f"HTTP {resp.status}", 0) + 1
             continue
-        state = json.loads(body)
+        try:
+            state = json.loads(body)
+            seg = next(s for s in state["segments"] if s["id"] == args.segment)
+            now_ms, rx_ms, seq = state["now_ms"], seg["rx_ms"], seg.get("seq")
+            if tracker is None and interval is None:
+                interval = float(state["settings"]["refresh_s"])
+        except (ValueError, KeyError, TypeError, StopIteration):
+            # a proxy page, a restart mid-response, or a gateway older than 1.1.1: count it, keep going
+            errors["bad payload"] = errors.get("bad payload", 0) + 1
+            continue
         responses += 1
-        seg = next((s for s in state["segments"] if s["id"] == args.segment), None)
-        if seg is None or "rx_ms" not in seg or "now_ms" not in state:
-            print("Segment missing or gateway has no rx_ms/now_ms fields (needs gateway 1.1.1 or later).",
-                  file=sys.stderr)
-            return 2
         if tracker is None:
-            interval = interval or float(state["settings"]["refresh_s"])
+            if not (math.isfinite(interval) and interval > 0):
+                print(f"Unusable poll interval {interval!r} from settings; pass --interval.", file=sys.stderr)
+                return 2
             next_poll = time.monotonic() + interval
             tracker = Tracker(interval)
-        tracker.update(state["now_ms"], seg["rx_ms"], seg.get("seq"))
+        tracker.update(now_ms, rx_ms, seq)
     con.close()
     if tracker is None:
         print(f"No valid /api/state responses; errors={errors}", file=sys.stderr)
