@@ -45,7 +45,8 @@ PORTAL_NAME = os.environ.get("PORTAL_NAME", "alerto.lan").lower()
 DEVICE_KEY = os.environ.get("DEVICE_KEY", "")
 ADMIN_PIN = os.environ.get("ADMIN_PIN", "")
 TS = "%Y-%m-%d %H:%M:%S"
-VERSION = "1.2.0"
+VERSION = "1.2.1"
+SNAPSHOT_MAX_AGE_S = 10
 
 _hn = socket.gethostname().lower()
 ALLOWED_HOSTS = {PORTAL_IP, PORTAL_NAME, "localhost", "127.0.0.1", _hn, f"{_hn}.local"}
@@ -178,6 +179,19 @@ def segment_states(s, now, live):
     return out
 
 
+def forecast_is_stale(fc, now):
+    if not fc:
+        return False
+    try:
+        if datetime.fromisoformat(fc["generated_at"]) < now - timedelta(minutes=15):
+            return True
+        return any(datetime.fromisoformat(points[0]["t"]) < now - timedelta(minutes=5)
+                   for segment in fc.get("segments", {}).values()
+                   for points in segment["models"].values() if points)
+    except (KeyError, TypeError, ValueError):
+        return True
+
+
 def forecast_view(fc, model):
     """{seg: {"next5": v, "points": [(t, v)]}} for one model."""
     out = {}
@@ -192,10 +206,10 @@ def recommend(segs, fv):
     cand = [g for g in segs if g["occupancy_pct"] is not None]
     if not cand:
         return None
-    key = lambda g: fv.get(g["id"], {}).get("next5", g["occupancy_pct"])
-    best = min(cand, key=key)
-    return {"id": best["id"], "now": best["occupancy_pct"], "next5": round(key(best), 1),
-            "basis": "forecast" if best["id"] in fv else "current"}
+    best = min(cand, key=lambda g: g["occupancy_pct"])
+    next5 = fv.get(best["id"], {}).get("next5", best["occupancy_pct"])
+    return {"id": best["id"], "now": best["occupancy_pct"], "next5": round(next5, 1),
+            "basis": "current"}
 
 
 def update_gate(segs, s):
@@ -234,6 +248,8 @@ def build_state(live):
     segs = segment_states(s, now, live)
     now_ms = int(time.time() * 1000)  # after reading frames, so now_ms >= every rx_ms in this state
     fc = read_json("forecast.json")
+    if forecast_is_stale(fc, now):
+        fc = None
     model = (fc or {}).get("active_model")
     fv = forecast_view(fc, model) if model else {}
     have = [g["occupancy_pct"] for g in segs if g["occupancy_pct"] is not None]
@@ -287,7 +303,7 @@ STREAM_MIN_GAP_S = 0.25
 
 
 class NotReady(Exception):
-    """No crowd state has been built yet (startup, or every rebuild so far failed)."""
+    """No recent successful crowd state is available."""
 
 
 class StateBuilder:
@@ -295,6 +311,7 @@ class StateBuilder:
         self.condition = threading.Condition()
         self.interval = interval
         self.current = None
+        self.last_successful_rebuild = None
         self.requested = self.completed = 0
         self.pending = True
         self.stopped = False
@@ -321,7 +338,7 @@ class StateBuilder:
             # slow or stuck rebuild never pushes /api/display past the bench's 250 ms read timeout
             self.condition.wait_for(lambda: self.current is not None and self.completed >= wanted,
                                     timeout=timeout)
-            if self.current is None:
+            if self.current is None or time.monotonic() - self.last_successful_rebuild > SNAPSHOT_MAX_AGE_S:
                 raise NotReady()          # answered as a fast 503, never a long wait
             return self.current
 
@@ -358,6 +375,7 @@ class StateBuilder:
                     state["rev"] = self.current["state"]["rev"] + 1 if self.current else 1
                     state["boot"] = BOOT_ID   # rev restarts with the process; clients compare within a boot
                     self.current = {"state": state, "live": live}
+                    self.last_successful_rebuild = time.monotonic()
             finally:
                 with self.condition:
                     self.completed = wanted
@@ -456,6 +474,9 @@ def api_forecast():
     fc = read_json("forecast.json")
     now = datetime.now()
     status = read_json("status.json") or {}
+    if forecast_is_stale(fc, now):
+        fc = None
+        status = dict(status, stale=True)
     if not fc:
         return jsonify({"ready": False, "status": status, "calendar": calendar_context(now)})
     model = request.args.get("model") or fc.get("active_model")
@@ -467,7 +488,7 @@ def api_forecast():
     nxt = {seg: v["points"][0]["v"] for seg, v in segs.items() if v["points"]}
     least = min(nxt, key=nxt.get) if nxt else None
     return jsonify({
-        "ready": True, "status": status, "model": model, "best_model": fc.get("best_model"),
+        "ready": bool(nxt), "status": status, "model": model, "best_model": fc.get("best_model"),
         "active_model": fc.get("active_model"), "auto": s["active_model"] == "auto",
         "generated_at": fc.get("generated_at"), "fitted_at": fc.get("fitted_at"),
         "orders": fc.get("orders"), "metrics": fc.get("metrics", {}), "segments": segs,

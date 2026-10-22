@@ -111,6 +111,81 @@ class LivePushTest(unittest.TestCase):
             self.assertEqual(response.get_json(), expected)
             self.assertEqual(response.data, app.app.json.response(expected).data)
 
+    def test_recommendation_uses_current_occupancy_with_forecasts(self):
+        segs = [{"id": "A", "occupancy_pct": 20}, {"id": "B", "occupancy_pct": 60},
+                {"id": "C", "occupancy_pct": None}]
+        forecasts = {"A": {"next5": 90}, "B": {"next5": 10}, "C": {"next5": 0}}
+        self.assertEqual(app.recommend(segs, forecasts),
+                         {"id": "A", "now": 20, "next5": 90, "basis": "current"})
+        self.assertEqual(app.recommend(segs, {"B": {"next5": 10}}),
+                         {"id": "A", "now": 20, "next5": 20, "basis": "current"})
+
+    def check_forecast(self, generated_age=0, point_offset=5, model="ARIMAX"):
+        now = app.datetime.now().replace(microsecond=0)
+        forecast = {
+            "generated_at": (now - app.timedelta(minutes=generated_age)).strftime(app.TS),
+            "active_model": "ARIMAX",
+            "segments": {"A": {"history": [], "models": {"ARIMAX": [
+                {"t": (now + app.timedelta(minutes=point_offset)).strftime(app.TS), "v": 90}]}}},
+        }
+        with tempfile.TemporaryDirectory(prefix="prefreeze-", dir=_temp_root) as out_dir, \
+                patch.object(app.store, "OUT_DIR", out_dir), \
+                patch.object(app, "datetime", wraps=app.datetime) as clock:
+            clock.now.return_value = now
+            Path(out_dir, "forecast.json").write_text(json.dumps(forecast), encoding="utf-8")
+            Path(out_dir, "status.json").write_text('{"state":"ready"}', encoding="utf-8")
+            with patch.object(app, "segment_states", return_value=[
+                    {"id": "A", "occupancy_pct": 20, "level": "low", "device": "platform-A",
+                     "online": True, "last_seen_s": 0}]):
+                state = app.build_state({})
+            response = self.client.get(f"/api/forecast?model={model}", headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        return state, response.get_json()
+
+    def assert_stale_forecast(self, state, forecast):
+        self.assertIsNone(state["forecast"])
+        self.assertFalse(any(a["kind"] == "forecast" for a in state["alerts"]))
+        self.assertFalse(forecast["ready"])
+        self.assertTrue(forecast["status"]["stale"])
+        self.assertEqual(forecast["status"]["state"], "ready")
+
+    def test_twenty_minute_old_forecast_expires(self):
+        self.assert_stale_forecast(*self.check_forecast(generated_age=20))
+
+    def test_forecast_with_past_points_expires(self):
+        self.assert_stale_forecast(*self.check_forecast(point_offset=-6))
+
+    def test_forecast_at_expiry_boundaries_is_available(self):
+        state, forecast = self.check_forecast(generated_age=15, point_offset=-5)
+        self.assertIsNotNone(state["forecast"])
+        self.assertTrue(forecast["ready"])
+        self.assertNotIn("stale", forecast["status"])
+        self.assertTrue(any(a["kind"] == "forecast" for a in state["alerts"]))
+
+    def test_selected_forecast_model_without_points_is_not_ready(self):
+        _, forecast = self.check_forecast(model="X")
+        self.assertFalse(forecast["ready"])
+
+    def test_stale_snapshot_is_fast_503_and_recovers(self):
+        self.state()
+        last_success = self.builder.last_successful_rebuild
+        monotonic = app.time.monotonic
+        with patch.object(app.time, "monotonic", side_effect=lambda: monotonic() + 11), \
+                patch.object(app, "build_state", side_effect=RuntimeError("test rebuild failure")):
+            with self.assertLogs(app.app.logger, level="ERROR"):
+                for _ in range(3):
+                    self.builder.notify()
+                    with self.builder.condition:
+                        self.assertTrue(self.builder.condition.wait_for(
+                            lambda: self.builder.completed == self.builder.requested, timeout=1))
+            self.assertEqual(self.builder.last_successful_rebuild, last_success)
+            start = app.time.perf_counter()
+            response = self.client.get("/api/display", headers=self.headers)
+            self.assertLess(app.time.perf_counter() - start, 0.25)
+            self.assertEqual(response.status_code, 503)
+        app.rebuild_now()
+        self.assertEqual(self.client.get("/api/display", headers=self.headers).status_code, 200)
+
     def test_stream_first_chunk_contains_state_and_matching_live_frame(self):
         self.post_frame()
         app.rebuild_now()

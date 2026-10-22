@@ -3,6 +3,14 @@
 Planned changes, recorded before any code changes. Every change lands as a commit or PR in this repository so
 improvements and regressions stay traceable. Baseline node firmware: [`backups/node-v0`](../backups/node-v0/).
 
+## Done before the defense
+
+- Guidance selects the segment with the lowest current occupancy and keeps forecast values for existing consumers.
+- Forecasts expire after 15 minutes or when their first point is more than 5 minutes in the past.
+- Forecast charts handle empty segment points, and models without points return ready: false.
+- The bench receives a fast 503 when the last successful state rebuild is more than 10 seconds old.
+- The dashboard hides zone guidance during Hold, clarifies reporting coverage, and uses darker status labels.
+
 ## Problem: sensor-to-dashboard lag of several seconds
 
 Where the delay comes from, in path order, taken from the code constants:
