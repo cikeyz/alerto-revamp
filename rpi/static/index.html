@@ -385,7 +385,8 @@
         <div><label for="s-lead">Forecast alert lead time</label>
           <select id="s-lead"><option value="10">10 Minutes</option><option value="15">15 Minutes</option><option value="20">20 Minutes</option><option value="30">30 Minutes</option></select></div>
         <div><label for="s-refresh">Dashboard refresh interval</label>
-          <select id="s-refresh"><option value="5">5 Seconds</option><option value="10">10 Seconds</option><option value="30">30 Seconds</option><option value="60">60 Seconds</option></select></div>
+          <select id="s-refresh"><option value="5">5 Seconds</option><option value="10">10 Seconds</option><option value="30">30 Seconds</option><option value="60">60 Seconds</option></select>
+          <div class="hint">Used when the live stream is unavailable.</div></div>
         <div><label for="s-ret">Data retention (days)</label><input id="s-ret" type="number" min="7" max="3650"></div>
         <div><label for="s-lang">Language toggle</label>
           <select id="s-lang"><option value="fil">Filipino (Default)</option><option value="en">English</option></select>
@@ -439,6 +440,7 @@
   };
   let state = null, settingsData = null, fcData = null, histData = null, fModel = null, timer = null;
   let stream = null, streamConnected = false, streamRetry = null, liveTimer = null, latestSnapshot = null, lastEventAt = 0;
+  let forecastRequestedGeneration = null, forecastRequestedAt = 0;
   const pct = v => v == null ? "—" : `${Math.round(v)}%`;
   const parseT = s => { const [d, t] = s.split(/[ T]/); const [y, m, dd] = d.split("-").map(Number);
     const [hh, mi, ss] = (t || "0:0").split(":").map(Number); return new Date(y, m - 1, dd, hh, mi, ss || 0); };
@@ -719,7 +721,16 @@
 
   // ---------------------------------------------------------------- forecast tab
   $("f-tabs").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; fModel = b.dataset.m; loadForecast(); });
+  function refreshForecast() {
+    if (document.hidden || document.querySelector('[data-page="forecast"]').hidden) return;
+    const generatedAt = latestSnapshot?.forecast?.generated_at ?? null;
+    const changed = generatedAt !== (fcData?.generated_at ?? null) && generatedAt !== forecastRequestedGeneration;
+    if (changed || Date.now() - forecastRequestedAt >= 60000) loadForecast();
+  }
   async function loadForecast() {
+    // Record the attempt before awaiting so slow or failed requests cannot retry on every snapshot.
+    forecastRequestedGeneration = latestSnapshot?.forecast?.generated_at ?? null;
+    forecastRequestedAt = Date.now();
     try { fcData = await getJSON("/api/forecast" + (fModel ? `?model=${fModel}` : "")); } catch (e) { return; }
     if (!fModel && fcData.ready) fModel = fcData.active_model;
     renderForecast();
@@ -879,7 +890,7 @@
     stream.addEventListener("state", e => {
       lastEventAt = Date.now();
       renderSnapshot(JSON.parse(e.data));
-      if (!document.hidden && !document.querySelector('[data-page="forecast"]').hidden) loadForecast();
+      refreshForecast();
     });
     stream.onerror = () => {
       streamConnected = false;
@@ -898,7 +909,7 @@
     } catch (e) {
       if (!streamConnected && !document.hidden) $("updated").innerHTML = `<span class="dot stale"></span>Hub unreachable. Check you're on the station Wi-Fi.`;
     }
-    if (!document.hidden && !document.querySelector('[data-page="forecast"]').hidden) loadForecast();
+    refreshForecast();
   }
   // the hub sends a state event every second; 30 s of silence means a dead link the browser has not noticed
   setInterval(() => {

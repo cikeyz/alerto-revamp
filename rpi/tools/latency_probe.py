@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 
 
 MIN_FRAME_MS = 20     # no node sends faster than 50 Hz; a bigger seq jump than this allows is not real
+STREAM_READ_TIMEOUT_S = 20
 
 
 class Tracker:
@@ -59,30 +60,29 @@ class Tracker:
 
 def stream_states(con, path, headers, end):
     """Yield each `event: state` payload from /api/stream until `end` (monotonic seconds)."""
+    if con.sock is None:
+        con.connect()
+    con.sock.settimeout(STREAM_READ_TIMEOUT_S)
     con.request("GET", path, headers=headers)
-    resp = con.getresponse()
-    if resp.status != 200:
-        raise http.client.HTTPException(f"HTTP {resp.status}")
-    event, data = None, []
-    while time.monotonic() < end:
-        if con.sock:
-            con.sock.settimeout(min(20, max(0.001, end - time.monotonic())))
-        try:
+    with con.getresponse() as resp:
+        if resp.status != 200:
+            raise http.client.HTTPException(f"HTTP {resp.status}")
+        event, data = None, []
+        while time.monotonic() < end:
             raw = resp.readline()
-        except TimeoutError:
-            con.close()                   # never reuse a half-read stream connection
-            return
-        if not raw:
-            raise ConnectionError("stream closed")
-        line = raw.decode("utf-8").rstrip("\r\n")
-        if not line:
-            if event == "state" and data:
-                yield "\n".join(data)
-            event, data = None, []
-        elif line.startswith("event:"):
-            event = line[6:].strip()
-        elif line.startswith("data:"):
-            data.append(line[5:].lstrip(" "))
+            if time.monotonic() >= end:
+                return
+            if not raw:
+                raise ConnectionError("stream closed")
+            line = raw.decode("utf-8").rstrip("\r\n")
+            if not line:
+                if event == "state" and data:
+                    yield "\n".join(data)
+                event, data = None, []
+            elif line.startswith("event:"):
+                event = line[6:].strip()
+            elif line.startswith("data:"):
+                data.append(line[5:].lstrip(" "))
 
 
 def summary(values):
@@ -141,11 +141,19 @@ def main():
                     errors[error] = errors.get(error, 0) + 1
                     continue
                 responses += 1
+                if type(state.get("sent_ms")) is int:
+                    now_ms = state["sent_ms"]
                 tracker.update(now_ms, rx_ms, seq)
         except (OSError, http.client.HTTPException) as e:
-            errors[type(e).__name__] = errors.get(type(e).__name__, 0) + 1
+            error = type(e).__name__
+            if isinstance(e, TimeoutError):
+                error = "stream stalled"
+            elif isinstance(e, http.client.HTTPException) and str(e).startswith("HTTP "):
+                error = str(e)
+            errors[error] = errors.get(error, 0) + 1
             con.close()
-            time.sleep(min(1, max(0, end - time.monotonic())))
+            backoff = 2 if error == "stream stalled" or error.startswith("HTTP ") else 1
+            time.sleep(min(backoff, max(0, end - time.monotonic())))
         times.append((time.perf_counter() - start) * 1000)
     if args.stream:
         interval = 0

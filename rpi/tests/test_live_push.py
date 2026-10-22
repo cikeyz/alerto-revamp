@@ -264,6 +264,59 @@ class LivePushTest(unittest.TestCase):
         self.builder.close()
         self.assertGreater(app.rebuild_now()["rev"], first)
 
+    def test_stream_coalesces_revisions_with_a_quarter_second_gap(self):
+        self.post_frame(seq=10)
+        app.rebuild_now()
+        clock = [100.0]
+        newest = []
+
+        def advance(seconds):
+            clock[0] += seconds
+            self.post_frame(seq=12)
+            newest.append(app.rebuild_now()["rev"])
+
+        with app.app.test_request_context("/api/stream", headers=self.headers):
+            response = app.api_stream()
+        try:
+            chunks = iter(response.response)
+            with patch.object(app.time, "monotonic", side_effect=lambda: clock[0]), \
+                    patch.object(app.time, "sleep", side_effect=advance):
+                self.assertTrue(next(chunks).startswith("event: state\n"))
+                first_at = clock[0]
+                clock[0] += 0.05
+                self.post_frame(seq=11)
+                intermediate = app.rebuild_now()["rev"]
+                chunk = next(chunks)
+                self.assertGreaterEqual(clock[0] - first_at, 0.25)
+                state = json.loads(next(line[6:] for line in chunk.splitlines() if line.startswith("data: ")))
+                self.assertEqual(state["rev"], newest[-1])
+                self.assertGreater(state["rev"], intermediate)
+                self.assertEqual(state["segments"][0]["seq"], 12)
+        finally:
+            response.close()
+
+    def test_stream_sent_ms_is_not_in_state(self):
+        before = int(app.time.time() * 1000)
+        response = self.client.get("/api/stream", headers=self.headers, buffered=False)
+        try:
+            chunk = next(iter(response.response)).decode()
+            state = json.loads(next(line[6:] for line in chunk.splitlines() if line.startswith("data: ")))
+            self.assertIs(type(state["sent_ms"]), int)
+            self.assertGreaterEqual(state["sent_ms"], before)
+            self.assertLessEqual(state["sent_ms"], int(app.time.time() * 1000))
+            self.assertNotIn("sent_ms", self.state())
+        finally:
+            response.close()
+
+    def test_builder_logs_first_failure_after_restart(self):
+        app.rebuild_now()
+        with patch.object(app, "build_state", side_effect=RuntimeError("restart failure")):
+            with self.assertLogs(app.app.logger, level="ERROR"):
+                app.rebuild_now()
+            self.builder.close()
+            with self.assertLogs(app.app.logger, level="ERROR"):
+                app.rebuild_now()
+
 
 if __name__ == "__main__":
     unittest.main()

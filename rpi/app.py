@@ -283,6 +283,7 @@ def build_state(live):
 
 
 BOOT_ID = int(time.time() * 1000)
+STREAM_MIN_GAP_S = 0.25
 
 
 class NotReady(Exception):
@@ -332,6 +333,7 @@ class StateBuilder:
             self.thread.join()
         with self.condition:              # restartable: the next notify() or get() starts a new thread
             self.thread, self.stopped = None, False
+            self.last_error_log = -60.0
 
     def _run(self):
         next_update = time.monotonic()
@@ -396,16 +398,22 @@ def api_stream():
             snapshot = first
             while True:
                 rev = snapshot["state"]["rev"]
-                data = json.dumps(dict(snapshot["state"], live=snapshot["live"]), separators=(",", ":"))
+                data = json.dumps(dict(snapshot["state"], live=snapshot["live"],
+                                       sent_ms=int(time.time() * 1000)), separators=(",", ":"))
+                last_sent = time.monotonic()
                 yield f"event: state\nretry: 15000\ndata: {data}\n\n"
                 while True:
                     with builder.condition:
                         changed = builder.condition.wait_for(
                             lambda: builder.current["state"]["rev"] != rev, timeout=15)
-                        snapshot = builder.current
                     if changed:
                         break
                     yield ": ping\n\n"
+                gap = STREAM_MIN_GAP_S - (time.monotonic() - last_sent)
+                if gap > 0:
+                    time.sleep(gap)
+                with builder.condition:
+                    snapshot = builder.current
         finally:
             release()
 
