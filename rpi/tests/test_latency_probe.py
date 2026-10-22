@@ -79,7 +79,7 @@ def state_doc(seq, refresh_s=1):
 
 
 class ProbeRunTest(unittest.TestCase):
-    """Runs main() against a stub /api/state that serves the given bodies in turn."""
+    """Runs main() against stub gateway endpoints."""
 
     def run_probe(self, bodies, *argv):
         served = iter(bodies)
@@ -143,6 +143,48 @@ class ProbeRunTest(unittest.TestCase):
         code, _, err = self.run_probe([state_doc(1, refresh_s=-5)], "--duration", "5")
         self.assertEqual(code, 2)
         self.assertIn("Unusable poll interval", err)
+
+    def test_stream_bad_payload_is_counted_not_fatal(self):
+        release = threading.Event()
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def do_GET(self):
+                if self.path != "/api/stream":
+                    self.send_error(404)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Transfer-Encoding", "chunked")
+                self.end_headers()
+                for state in (state_doc(1), state_doc(2), {"now_ms": 1}):
+                    event = f"event: state\ndata: {json.dumps(state)}\n\n".encode()
+                    self.wfile.write(f"{len(event):x}\r\n".encode() + event + b"\r\n")
+                self.wfile.flush()
+                release.wait(2)              # hold the stream past the probe's duration
+                self.close_connection = True
+
+            def log_message(self, *args):
+                pass
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        out, err = io.StringIO(), io.StringIO()
+        old = sys.argv
+        sys.argv = ["latency_probe.py", "--base", f"http://127.0.0.1:{srv.server_address[1]}",
+                    "--stream", "--duration", "0.6"]
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = probe.main()
+        finally:
+            sys.argv = old
+            release.set()
+            srv.shutdown()
+            srv.server_close()
+        self.assertEqual(code, 0)
+        self.assertIn("stream; responses=2; errors={'bad payload': 1}; frames shown=2;", out.getvalue())
+        self.assertIn("stream connections=1", out.getvalue())
 
 
 if __name__ == "__main__":

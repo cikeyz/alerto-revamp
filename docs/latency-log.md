@@ -49,11 +49,17 @@ included (localhost delivery is negligible).
 
 | Run | Printed output (verbatim) |
 | --- | --- |
-| `latency_probe.py --stream --duration 95` (each of 4) | `stream; responses=761; errors=none; frames shown=191; frames skipped=0; resets=0; frame_to_screen_ms min=4 / median=5 / p95=7 / max=13 (n=190); age_at_fetch_ms min=4 / median=5 / p95=7 / max=46; stream connections=1` |
-| `latency_probe.py --interval 1 --duration 85` (polling fallback) | `interval=1 s; responses=85; errors=none; frames shown=85; frames skipped=84; resets=0; frame_to_screen_ms min=35 / median=294 / p95=546 / max=552 (n=168); age_at_fetch_ms min=35 / median=37 / p95=47 / max=52; mean /api/state request time=1.099 ms` |
-| `fake_bench.py --duration 85` | `polls=85; valid=85; errors=none; response_ms median=3.1 / p95=21.0 / max=26.0; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]` |
-| `fake_node.py --hz 2 --duration 130` (each of 4) | `frames sent=260; failures=0` (mean POST 3.3 to 5.4 ms) |
+| `latency_probe.py --stream --duration 95` (stream 1) | `stream; responses=759; errors=none; frames shown=191; frames skipped=0; resets=0; frame_to_screen_ms min=4 / median=6 / p95=9 / max=18 (n=190); age_at_fetch_ms min=4 / median=6 / p95=9 / max=42; stream connections=1` |
+| `latency_probe.py --stream --duration 95` (stream 2) | `stream; responses=756; errors=none; frames shown=191; frames skipped=0; resets=0; frame_to_screen_ms min=4 / median=6 / p95=9 / max=18 (n=190); age_at_fetch_ms min=4 / median=6 / p95=9 / max=42; stream connections=1` |
+| `latency_probe.py --stream --duration 95` (stream 3) | `stream; responses=758; errors=none; frames shown=191; frames skipped=0; resets=0; frame_to_screen_ms min=4 / median=6 / p95=9 / max=18 (n=190); age_at_fetch_ms min=4 / median=6 / p95=9 / max=42; stream connections=1` |
+| `latency_probe.py --stream --duration 95` (stream 4) | `stream; responses=755; errors=none; frames shown=191; frames skipped=0; resets=0; frame_to_screen_ms min=4 / median=6 / p95=9 / max=18 (n=190); age_at_fetch_ms min=4 / median=6 / p95=9 / max=42; stream connections=1` |
+| `latency_probe.py --interval 1 --duration 85` (polling fallback) | `interval=1 s; responses=85; errors=none; frames shown=85; frames skipped=84; resets=0; frame_to_screen_ms min=37 / median=300 / p95=554 / max=559 (n=168); age_at_fetch_ms min=37 / median=45 / p95=56 / max=62; mean /api/state request time=1.361 ms` |
+| `fake_bench.py --duration 85` | `polls=85; valid=85; errors=none; response_ms median=1.9 / p95=23.7 / max=32.8; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]` |
+| `fake_node.py --device platform-A --hz 2 --duration 130` | `frames sent=260; failures=0; mean POST time=4.423 ms` |
+| `fake_node.py --device platform-B --hz 2 --duration 130` | `frames sent=260; failures=0; mean POST time=4.346 ms` |
+| `fake_node.py --device platform-C --hz 2 --duration 130` | `frames sent=260; failures=0; mean POST time=5.460 ms` |
+| `fake_node.py --device platform-D --hz 2 --duration 130` | `frames sent=260; failures=0; mean POST time=9.399 ms` |
 
 Reading: with the dashboard on the stream, frame-to-screen falls from a median of 4575 ms (10 s polling
-baseline) to 5 ms, p95 from 9075 ms to 7 ms, with no skipped frames. The bench's `/api/display` stays at
-26 ms worst case with every stream slot taken, well inside its 250 ms timeout.
+baseline) to 6 ms, p95 from 9075 ms to 9 ms, with no skipped frames. The bench's `/api/display` stays at
+32.8 ms worst case with every stream slot taken, well inside its 250 ms timeout.
