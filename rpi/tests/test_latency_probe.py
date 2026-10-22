@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 import threading
 import unittest
+from unittest.mock import patch
 
 _spec = importlib.util.spec_from_file_location(
     "latency_probe", Path(__file__).resolve().parents[1] / "tools" / "latency_probe.py")
@@ -79,7 +80,7 @@ def state_doc(seq, refresh_s=1):
 
 
 class ProbeRunTest(unittest.TestCase):
-    """Runs main() against a stub /api/state that serves the given bodies in turn."""
+    """Runs main() against stub gateway endpoints."""
 
     def run_probe(self, bodies, *argv):
         served = iter(bodies)
@@ -143,6 +144,104 @@ class ProbeRunTest(unittest.TestCase):
         code, _, err = self.run_probe([state_doc(1, refresh_s=-5)], "--duration", "5")
         self.assertEqual(code, 2)
         self.assertIn("Unusable poll interval", err)
+
+    def test_stream_bad_payload_is_counted_not_fatal(self):
+        release = threading.Event()
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def do_GET(self):
+                if self.path != "/api/stream":
+                    self.send_error(404)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Transfer-Encoding", "chunked")
+                self.end_headers()
+                for state in (state_doc(1), state_doc(2), {"now_ms": 1}):
+                    event = f"event: state\ndata: {json.dumps(state)}\n\n".encode()
+                    self.wfile.write(f"{len(event):x}\r\n".encode() + event + b"\r\n")
+                self.wfile.flush()
+                release.wait(2)              # hold the stream past the probe's duration
+                self.close_connection = True
+
+            def log_message(self, *args):
+                pass
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        out, err = io.StringIO(), io.StringIO()
+        old = sys.argv
+        sys.argv = ["latency_probe.py", "--base", f"http://127.0.0.1:{srv.server_address[1]}",
+                    "--stream", "--duration", "0.6"]
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = probe.main()
+        finally:
+            sys.argv = old
+            release.set()
+            srv.shutdown()
+            srv.server_close()
+        self.assertEqual(code, 0)
+        self.assertIn("stream; responses=2; errors={'bad payload': 1}; frames shown=2;", out.getvalue())
+        self.assertIn("stream connections=1", out.getvalue())
+
+    def run_closing_stream(self, states=(), status=200, duration=0.3):
+        release = threading.Event()
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def do_GET(self):
+                self.send_response(status)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                if status == 200:
+                    for state in states:
+                        self.wfile.write(f"event: state\ndata: {json.dumps(state)}\n\n".encode())
+                    self.wfile.flush()
+                    release.wait(duration + 0.5)
+                self.close_connection = True
+
+            def log_message(self, *args):
+                pass
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        out, err = io.StringIO(), io.StringIO()
+        argv = ["latency_probe.py", "--base", f"http://127.0.0.1:{srv.server_address[1]}",
+                "--stream", "--duration", str(duration)]
+        try:
+            with patch.object(sys, "argv", argv), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = probe.main()
+        finally:
+            release.set()
+            srv.shutdown()
+            srv.server_close()
+        return code, out.getvalue(), err.getvalue()
+
+    def test_stream_http_error_is_named_and_backed_off(self):
+        code, out, _ = self.run_closing_stream(status=503, duration=2.2)
+        self.assertEqual(code, 0)
+        self.assertIn("errors={'HTTP 503': 2}", out)
+        self.assertIn("stream connections=2", out)
+
+    def test_closing_stream_read_timeout_is_counted_and_backed_off(self):
+        with patch.object(probe, "STREAM_READ_TIMEOUT_S", 0.05, create=True):
+            code, out, _ = self.run_closing_stream([state_doc(1)])
+        self.assertEqual(code, 0)
+        self.assertIn("responses=1; errors={'stream stalled': 1}", out)
+        self.assertIn("stream connections=1", out)
+
+    def test_stream_sent_ms_is_the_visibility_time(self):
+        states = [state_doc(1), state_doc(2)]
+        for state in states:
+            state["sent_ms"] = state["segments"][0]["rx_ms"] + 275
+        code, out, _ = self.run_closing_stream(states)
+        self.assertEqual(code, 0)
+        self.assertIn("frame_to_screen_ms min=275 / median=275 / p95=275 / max=275 (n=1)", out)
 
 
 if __name__ == "__main__":

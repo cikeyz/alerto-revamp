@@ -17,6 +17,9 @@ clock:
   more than `2 x interval + 1 s` after the previous one (probe paused, gateway restart) also resets the chain.
 - `age_at_fetch_ms`: age of the newest frame at each fetch. On its own it understates dashboard latency.
 
+Stream mode uses the event's integer `sent_ms` as visibility time, including the stream throttle wait, and
+falls back to snapshot `now_ms` for older gateways.
+
 Not covered: sensor acquisition, node processing, Wi-Fi transit, browser rendering.
 
 ## 2026-10-22: baseline, gateway 1.1.1, local laptop
@@ -38,3 +41,29 @@ browser polling at 1 s sees 0 to 1 s.
 
 The running node firmware (v0) sends no `seq`, so on the Pi this probe can only report `age_at_fetch_ms`
 until the node firmware adds it.
+
+## 2026-10-22: live push, gateway 1.2.0, local laptop under load
+
+Setup: Windows 11 laptop, gateway `1.2.0`, Python `3.13.14`, Waitress `3.0.2` with 8 threads at
+`127.0.0.1:8090`. Four fake nodes (`platform-A` to `D`) at 2 Hz with `seq`, all four stream slots held by
+probes, plus the bench client (`tools/fake_bench.py`) and a 1 s poller at the same time. NOT the Raspberry Pi
+and NOT a real node. Stream figures use the event's `sent_ms`, including the throttle wait; delivery and
+browser rendering are not included (localhost delivery is negligible).
+
+| Run | Printed output (verbatim) |
+| --- | --- |
+| `latency_probe.py --stream --duration 95` (stream 1) | `stream; responses=372; errors=none; frames shown=191; frames skipped=0; resets=0; frame_to_screen_ms min=5 / median=22 / p95=36 / max=67 (n=190); age_at_fetch_ms min=5 / median=22 / p95=36 / max=72; stream connections=1` |
+| `latency_probe.py --stream --duration 95` (stream 2) | `stream; responses=371; errors=none; frames shown=191; frames skipped=0; resets=0; frame_to_screen_ms min=5 / median=21 / p95=37 / max=64 (n=190); age_at_fetch_ms min=5 / median=21 / p95=37 / max=85; stream connections=1` |
+| `latency_probe.py --stream --duration 95` (stream 3) | `stream; responses=371; errors=none; frames shown=191; frames skipped=0; resets=0; frame_to_screen_ms min=5 / median=21 / p95=36 / max=62 (n=190); age_at_fetch_ms min=5 / median=21 / p95=36 / max=91; stream connections=1` |
+| `latency_probe.py --stream --duration 95` (stream 4) | `stream; responses=372; errors=none; frames shown=191; frames skipped=0; resets=0; frame_to_screen_ms min=5 / median=22 / p95=36 / max=66 (n=190); age_at_fetch_ms min=5 / median=22 / p95=36 / max=92; stream connections=1` |
+| `latency_probe.py --interval 1 --duration 85` (polling fallback) | `interval=1 s; responses=85; errors=none; frames shown=85; frames skipped=84; resets=0; frame_to_screen_ms min=34 / median=301 / p95=539 / max=567 (n=168); age_at_fetch_ms min=34 / median=36 / p95=40 / max=67; mean /api/state request time=1.313 ms` |
+| `fake_bench.py --duration 85` | `polls=85; valid=85; errors=none; response_ms median=3.2 / p95=25.8 / max=26.9; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]` |
+| `fake_node.py --device platform-A --hz 2 --duration 130` | `frames sent=260; failures=0; mean POST time=3.480 ms` |
+| `fake_node.py --device platform-B --hz 2 --duration 130` | `frames sent=260; failures=0; mean POST time=3.411 ms` |
+| `fake_node.py --device platform-C --hz 2 --duration 130` | `frames sent=260; failures=0; mean POST time=3.402 ms` |
+| `fake_node.py --device platform-D --hz 2 --duration 130` | `frames sent=260; failures=0; mean POST time=3.626 ms` |
+
+Reading: with the dashboard on the stream, frame-to-screen falls from a median of 4575 ms (10 s polling
+baseline) to 21-22 ms, p95 from 9075 ms to 36-37 ms across the four streams, with no skipped frames. Each
+stream delivers 371-372 events over 95 s. The bench's `/api/display` stays at 26.9 ms worst case with every
+stream slot taken, well inside its 250 ms timeout.

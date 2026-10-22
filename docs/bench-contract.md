@@ -50,6 +50,9 @@ From the bench build guide (bench test checklist, steps 2, 3 and 5):
 - Do not change the hotspot name, password, address or port without updating the bench's `secrets.h` or
   `config.h`. Not before 2026-10-27.
 - A deploy restarts `density-web` for a few seconds; the bench rides through anything under 30 s.
+- Dashboard streams hold one of Waitress's 8 worker threads each and are capped at 4, leaving 4 for nodes, the
+  bench and ordinary requests. Do not raise the stream cap without raising `--threads` in `setup.sh` and
+  re-running `fake_bench.py` under load.
 
 ## Rehearse
 
@@ -68,6 +71,7 @@ It prints valid polls, errors by kind, response time and the longest gap between
 | Date | Gateway | Where | Result (verbatim) |
 | --- | --- | --- | --- |
 | 2026-10-22 | 1.1.0 (running Pi, before the revamp) | laptop over LAN, `--url http://192.168.254.155/api/display --duration 30` | `polls=30; valid=30; errors=none; response_ms median=6.7 / p95=25.5 / max=26.5; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open'), (7.0, 'closed'), (8.0, 'open')]` |
+| 2026-10-22 | 1.2.0 (live push, local laptop) | 4 nodes at 2 Hz, 4 streams open, `--duration 85` | `polls=85; valid=85; errors=none; response_ms median=3.2 / p95=25.8 / max=26.9; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]` |
 
 The 1.1.0 run shows the gate closing and reopening within about a second on live data from one node: the
 unsmoothed gate input (improvement backlog C3). The bench would show a one-second Hold.

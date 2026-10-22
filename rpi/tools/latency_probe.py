@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 
 
 MIN_FRAME_MS = 20     # no node sends faster than 50 Hz; a bigger seq jump than this allows is not real
+STREAM_READ_TIMEOUT_S = 20
 
 
 class Tracker:
@@ -57,6 +58,33 @@ class Tracker:
         self.prev_id, self.prev_seq, self.prev_rx, self.prev_now = ident, seq, rx_ms, now_ms
 
 
+def stream_states(con, path, headers, end):
+    """Yield each `event: state` payload from /api/stream until `end` (monotonic seconds)."""
+    if con.sock is None:
+        con.connect()
+    con.sock.settimeout(STREAM_READ_TIMEOUT_S)
+    con.request("GET", path, headers=headers)
+    with con.getresponse() as resp:
+        if resp.status != 200:
+            raise http.client.HTTPException(f"HTTP {resp.status}")
+        event, data = None, []
+        while time.monotonic() < end:
+            raw = resp.readline()
+            if time.monotonic() >= end:
+                return
+            if not raw:
+                raise ConnectionError("stream closed")
+            line = raw.decode("utf-8").rstrip("\r\n")
+            if not line:
+                if event == "state" and data:
+                    yield "\n".join(data)
+                event, data = None, []
+            elif line.startswith("event:"):
+                event = line[6:].strip()
+            elif line.startswith("data:"):
+                data.append(line[5:].lstrip(" "))
+
+
 def summary(values):
     values = sorted(values)
     if not values:
@@ -71,6 +99,7 @@ def main():
     ap.add_argument("--host-header")
     ap.add_argument("--segment", default="A")
     ap.add_argument("--interval", type=float)
+    ap.add_argument("--stream", action="store_true", help="listen to /api/stream instead of polling")
     ap.add_argument("--duration", type=float, default=120)
     ap.add_argument("--csv")
     args = ap.parse_args()
@@ -83,13 +112,52 @@ def main():
         ap.error("--base must be an HTTP or HTTPS URL")
     connection = http.client.HTTPSConnection if url.scheme == "https" else http.client.HTTPConnection
     con = connection(url.hostname, url.port, timeout=10)
-    path = url.path.rstrip("/") + "/api/state"
+    path = url.path.rstrip("/") + ("/api/stream" if args.stream else "/api/state")
     headers = {"Host": args.host_header} if args.host_header else {}
     interval, tracker = args.interval, None
     responses, errors, times = 0, {}, []
     next_poll = time.monotonic()
     end = next_poll + args.duration
-    while time.monotonic() < end:
+    while args.stream and time.monotonic() < end:
+        # events come at least once per second (the gateway rebuilds every second), so gaps use 1 s
+        tracker = tracker or Tracker(1)
+        start = time.perf_counter()
+        try:
+            for body in stream_states(con, path, headers, end):
+                try:
+                    state = json.loads(body)
+                    seg = next(s for s in state["segments"] if s["id"] == args.segment)
+                    now_ms, rx_ms, seq = state["now_ms"], seg["rx_ms"], seg.get("seq")
+                    if (type(now_ms) is not int or (rx_ms is not None and type(rx_ms) is not int) or
+                            (seq is not None and type(seq) is not int)):
+                        raise ValueError("wrong-typed latency fields")
+                except (ValueError, KeyError, TypeError, StopIteration) as e:
+                    # distinguish missing segments and old gateways from malformed responses
+                    error = "bad payload"
+                    if isinstance(e, StopIteration):
+                        error = f"no segment {args.segment}"
+                    elif isinstance(e, KeyError) and e.args[0] in ("rx_ms", "now_ms"):
+                        error = "no latency fields"
+                    errors[error] = errors.get(error, 0) + 1
+                    continue
+                responses += 1
+                if type(state.get("sent_ms")) is int:
+                    now_ms = state["sent_ms"]
+                tracker.update(now_ms, rx_ms, seq)
+        except (OSError, http.client.HTTPException) as e:
+            error = type(e).__name__
+            if isinstance(e, TimeoutError):
+                error = "stream stalled"
+            elif isinstance(e, http.client.HTTPException) and str(e).startswith("HTTP "):
+                error = str(e)
+            errors[error] = errors.get(error, 0) + 1
+            con.close()
+            backoff = 2 if error == "stream stalled" or error.startswith("HTTP ") else 1
+            time.sleep(min(backoff, max(0, end - time.monotonic())))
+        times.append((time.perf_counter() - start) * 1000)
+    if args.stream:
+        interval = 0
+    while not args.stream and time.monotonic() < end:
         time.sleep(max(0, min(next_poll, end) - time.monotonic()))
         if time.monotonic() >= end:
             break
@@ -143,10 +211,12 @@ def main():
             writer.writerow(("now_ms", "rx_ms", "seq", "age_at_fetch_ms", "skipped"))
             writer.writerows(tracker.rows)
     mean = statistics.mean(times) if times else 0.0
-    print(f"interval={interval:g} s; responses={responses}; errors={errors or 'none'}; "
+    mode = "stream" if args.stream else f"interval={interval:g} s"
+    print(f"{mode}; responses={responses}; errors={errors or 'none'}; "
           f"frames shown={len(tracker.rows)}; frames skipped={tracker.skipped}; resets={tracker.resets}; "
           f"frame_to_screen_ms {summary(tracker.screen)} (n={len(tracker.screen)}); "
-          f"age_at_fetch_ms {summary(r[3] for r in tracker.rows)}; mean /api/state request time={mean:.3f} ms")
+          f"age_at_fetch_ms {summary(r[3] for r in tracker.rows)}; "
+          + (f"stream connections={len(times)}" if args.stream else f"mean /api/state request time={mean:.3f} ms"))
     if tracker.no_seq:
         print("WARNING: frames carry no seq, so frame_to_screen_ms is not measured; age_at_fetch_ms "
               "alone understates dashboard latency.", file=sys.stderr)
