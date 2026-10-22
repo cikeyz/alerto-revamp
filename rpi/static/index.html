@@ -553,7 +553,7 @@
       ? s.alerts.map(a => `<div class="lvlbox ${a.kind === "forecast" || a.kind === "offline" ? "lv-moderate" : "lv-high"}"><div>${esc(a.title)}<small>${esc(a.detail)}</small></div></div>`).join("")
       : `<div class="lvlbox lv-low" style="justify-content:flex-start;gap:12px">${checkSvg()} NONE</div>`;
     $("d-gate").innerHTML = s.gate.closed
-      ? `<div class="lvlbox lv-high"><span>CLOSED</span><span style="font-weight:400;font-size:14px">All reporting segments High</span></div>`
+      ? `<div class="lvlbox lv-high"><span>CLOSED</span><span style="font-weight:400;font-size:14px">Entry on hold</span></div>`
       : `<div class="lvlbox lv-low"><span>OPEN</span><span style="font-weight:400;font-size:14px">${s.settings ? "" : ""}</span></div>`;
 
     renderTiles(s);
@@ -587,7 +587,7 @@
       $("d-chart").parentElement.hidden = true; $("d-fc-empty").hidden = false;
       $("d-fc-empty").innerHTML = chartSvg() + (st.state === "collecting"
         ? `Forecasts start after ${st.needed_days} days of sensor data. Collected so far: ${st.data_days} days.`
-        : "Waiting for the first forecast run.");
+        : st.stale ? "Forecast paused: waiting for recent data." : "Waiting for the first forecast run.");
       $("d-fc-alert").innerHTML = ""; return;
     }
     $("d-chart").parentElement.hidden = false; $("d-fc-empty").hidden = true;
@@ -751,7 +751,8 @@
     const segs = Object.keys(f.segments || {}).filter(sg => f.segments[sg].points?.length).sort();
     if (!f.ready || !segs.length) {
       const st = f.status || {};
-      const msg = st.state === "collecting" ? `Forecasts start after ${st.needed_days} days of sensor data. Collected so far: ${st.data_days} days.` : "Waiting for the first forecast run.";
+      const msg = st.state === "collecting" ? `Forecasts start after ${st.needed_days} days of sensor data. Collected so far: ${st.data_days} days.`
+        : st.stale ? "Forecast paused: waiting for recent data." : "Waiting for the first forecast run.";
       $("f-inuse").innerHTML = ""; $("f-metrics").innerHTML = `<p class="empty" style="grid-column:1/-1">${msg}</p>`;
       $("f-chart").parentElement.hidden = true; $("f-empty").hidden = false; $("f-empty").innerHTML = chartSvg() + msg;
       $("f-legend").innerHTML = ""; $("f-base").innerHTML = ""; $("f-reco").innerHTML = `<p class="empty">${msg}</p>`; $("f-updated").textContent = "";

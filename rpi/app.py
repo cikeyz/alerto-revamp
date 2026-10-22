@@ -24,6 +24,7 @@ Production: waitress-serve --listen=0.0.0.0:80 app:app   Dev: python app.py --po
 """
 import hmac
 import json
+import math
 import os
 import socket
 import textwrap
@@ -47,6 +48,7 @@ ADMIN_PIN = os.environ.get("ADMIN_PIN", "")
 TS = "%Y-%m-%d %H:%M:%S"
 VERSION = "1.2.1"
 SNAPSHOT_MAX_AGE_S = 10
+FORECAST_POINT_MAX_AGE = timedelta(minutes=10)
 
 _hn = socket.gethostname().lower()
 ALLOWED_HOSTS = {PORTAL_IP, PORTAL_NAME, "localhost", "127.0.0.1", _hn, f"{_hn}.local"}
@@ -180,26 +182,52 @@ def segment_states(s, now, live):
 
 
 def forecast_is_stale(fc, now):
-    if not fc:
+    if fc is None:
         return False
     try:
-        if datetime.fromisoformat(fc["generated_at"]) < now - timedelta(minutes=15):
-            return True
-        return any(datetime.fromisoformat(points[0]["t"]) < now - timedelta(minutes=5)
-                   for segment in fc.get("segments", {}).values()
-                   for points in segment["models"].values() if points)
+        return datetime.fromisoformat(fc["generated_at"]) < now - timedelta(minutes=15)
     except (KeyError, TypeError, ValueError):
         return True
 
 
-def forecast_view(fc, model):
+def forecast_view(fc, model, now):
     """{seg: {"next5": v, "points": [(t, v)]}} for one model."""
     out = {}
-    for seg, d in (fc or {}).get("segments", {}).items():
-        pts = d["models"].get(model)
-        if pts:
+    if not isinstance(fc["segments"], dict):
+        raise ValueError("invalid forecast segments")
+    for seg, d in fc["segments"].items():
+        if not isinstance(d["history"], list) or not isinstance(d["models"], dict):
+            raise ValueError("invalid segment forecast")
+        for points in [d["history"], *d["models"].values()]:
+            if not isinstance(points, list):
+                raise ValueError("invalid forecast points")
+            for p in points:
+                if datetime.fromisoformat(p["t"]).tzinfo is not None:
+                    raise ValueError("forecast time must be local")
+                if type(p["v"]) not in (int, float) or not math.isfinite(p["v"]):
+                    raise ValueError("invalid forecast value")
+        pts = d["models"].get(model, [])
+        if pts and datetime.fromisoformat(pts[0]["t"]) >= now - FORECAST_POINT_MAX_AGE:
             out[seg] = {"next5": pts[0]["v"], "points": pts}
     return out
+
+
+def load_forecast(now, model=None):
+    fc = read_json("forecast.json")
+    status = read_json("status.json")
+    status = status if isinstance(status, dict) else {}
+    stale = forecast_is_stale(fc, now)
+    fv = {}
+    if fc is not None and not stale:
+        try:
+            model = model or fc.get("active_model")
+            fv = forecast_view(fc, model, now)
+            stale = not fv and any(d["models"].get(model) for d in fc["segments"].values())
+        except (AttributeError, KeyError, TypeError, ValueError, OverflowError):
+            fv, stale = {}, True
+    if stale:
+        status = dict(status, stale=True)
+    return fc if fv else None, fv, status
 
 
 def recommend(segs, fv):
@@ -247,11 +275,8 @@ def build_state(live):
     now = datetime.now()
     segs = segment_states(s, now, live)
     now_ms = int(time.time() * 1000)  # after reading frames, so now_ms >= every rx_ms in this state
-    fc = read_json("forecast.json")
-    if forecast_is_stale(fc, now):
-        fc = None
+    fc, fv, forecast_status = load_forecast(now)
     model = (fc or {}).get("active_model")
-    fv = forecast_view(fc, model) if model else {}
     have = [g["occupancy_pct"] for g in segs if g["occupancy_pct"] is not None]
     platform = round(sum(have) / len(have), 1) if have else None
     rec = recommend(segs, fv)
@@ -281,7 +306,7 @@ def build_state(live):
                                          + "Monitor entry gates closely."})
                 break
     if gate["closed"]:
-        alerts.insert(0, {"kind": "gate", "seg": None, "title": "Entry gate closed: every segment is High",
+        alerts.insert(0, {"kind": "gate", "seg": None, "title": "Entry gate closed: reporting segments reached High",
                           "detail": "It reopens when any segment drops 5 points below the High threshold."})
     return {
         "now": now.strftime(TS), "now_ms": now_ms, "clock_ok": now.year >= 2025, "version": VERSION,
@@ -293,7 +318,7 @@ def build_state(live):
             "model": model, "generated_at": fc.get("generated_at"),
             "segments": {seg: {"history": fc["segments"][seg]["history"][-3:], "points": d["points"]}
                          for seg, d in fv.items()}},
-        "forecast_status": read_json("status.json") or {},
+        "forecast_status": forecast_status,
         "admin_enabled": bool(ADMIN_PIN),
     }
 
@@ -471,18 +496,15 @@ def calendar_context(now):
 
 @app.get("/api/forecast")
 def api_forecast():
-    fc = read_json("forecast.json")
     now = datetime.now()
-    status = read_json("status.json") or {}
-    if forecast_is_stale(fc, now):
-        fc = None
-        status = dict(status, stale=True)
+    fc, fv, status = load_forecast(now, request.args.get("model"))
     if not fc:
         return jsonify({"ready": False, "status": status, "calendar": calendar_context(now)})
     model = request.args.get("model") or fc.get("active_model")
     segs = {}
-    for seg, d in fc["segments"].items():
-        segs[seg] = {"history": d["history"], "points": d["models"].get(model, []),
+    for seg, view in fv.items():
+        d = fc["segments"][seg]
+        segs[seg] = {"history": d["history"], "points": view["points"],
                      "all": {m: v for m, v in d["models"].items()}}
     s = cfg.load()
     nxt = {seg: v["points"][0]["v"] for seg, v in segs.items() if v["points"]}

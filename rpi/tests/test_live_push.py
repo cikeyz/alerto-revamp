@@ -120,14 +120,18 @@ class LivePushTest(unittest.TestCase):
         self.assertEqual(app.recommend(segs, {"B": {"next5": 10}}),
                          {"id": "A", "now": 20, "next5": 20, "basis": "current"})
 
-    def check_forecast(self, generated_age=0, point_offset=5, model="ARIMAX"):
-        now = app.datetime.now().replace(microsecond=0)
-        forecast = {
+    def forecast_document(self, now, generated_age=0, point_offset=5):
+        return {
             "generated_at": (now - app.timedelta(minutes=generated_age)).strftime(app.TS),
             "active_model": "ARIMAX",
             "segments": {"A": {"history": [], "models": {"ARIMAX": [
-                {"t": (now + app.timedelta(minutes=point_offset)).strftime(app.TS), "v": 90}]}}},
+                {"t": (now + app.timedelta(minutes=point_offset)).strftime("%Y-%m-%d %H:%M"), "v": 90}]}}},
         }
+
+    def check_forecast(self, generated_age=0, point_offset=5, model="ARIMAX", now=None, forecast=None):
+        now = now or app.datetime.now().replace(microsecond=0)
+        if forecast is None:
+            forecast = self.forecast_document(now, generated_age, point_offset)
         with tempfile.TemporaryDirectory(prefix="prefreeze-", dir=_temp_root) as out_dir, \
                 patch.object(app.store, "OUT_DIR", out_dir), \
                 patch.object(app, "datetime", wraps=app.datetime) as clock:
@@ -144,6 +148,7 @@ class LivePushTest(unittest.TestCase):
 
     def assert_stale_forecast(self, state, forecast):
         self.assertIsNone(state["forecast"])
+        self.assertTrue(state["forecast_status"]["stale"])
         self.assertFalse(any(a["kind"] == "forecast" for a in state["alerts"]))
         self.assertFalse(forecast["ready"])
         self.assertTrue(forecast["status"]["stale"])
@@ -153,14 +158,93 @@ class LivePushTest(unittest.TestCase):
         self.assert_stale_forecast(*self.check_forecast(generated_age=20))
 
     def test_forecast_with_past_points_expires(self):
-        self.assert_stale_forecast(*self.check_forecast(point_offset=-6))
+        self.assert_stale_forecast(*self.check_forecast(point_offset=-11))
 
-    def test_forecast_at_expiry_boundaries_is_available(self):
-        state, forecast = self.check_forecast(generated_age=15, point_offset=-5)
+    def test_minute_formatted_point_9m59s_old_is_available(self):
+        now = app.datetime(2026, 10, 22, 12, 9, 59)
+        state, forecast = self.check_forecast(point_offset=-9, now=now)
         self.assertIsNotNone(state["forecast"])
         self.assertTrue(forecast["ready"])
+        self.assertEqual(forecast["segments"]["A"]["points"][0]["t"], "2026-10-22 12:00")
         self.assertNotIn("stale", forecast["status"])
+        self.assertNotIn("stale", state["forecast_status"])
         self.assertTrue(any(a["kind"] == "forecast" for a in state["alerts"]))
+
+    def test_minute_formatted_point_10m01s_old_is_stale(self):
+        now = app.datetime(2026, 10, 22, 12, 10, 1)
+        self.assert_stale_forecast(*self.check_forecast(point_offset=-10, now=now))
+
+    def test_stale_segment_does_not_hide_fresh_segment(self):
+        now = app.datetime.now().replace(microsecond=0)
+        document = self.forecast_document(now, point_offset=-11)
+        document["segments"]["B"] = self.forecast_document(now)["segments"]["A"]
+        state, forecast = self.check_forecast(now=now, forecast=document)
+        self.assertEqual(set(state["forecast"]["segments"]), {"B"})
+        self.assertEqual(set(forecast["segments"]), {"B"})
+        self.assertTrue(forecast["ready"])
+        self.assertNotIn("stale", forecast["status"])
+        self.assertFalse(any(a["kind"] == "forecast" and a["seg"] == "A" for a in state["alerts"]))
+        document["generated_at"] = (now - app.timedelta(minutes=20)).strftime(app.TS)
+        self.assert_stale_forecast(*self.check_forecast(now=now, forecast=document))
+
+    def test_point_expiry_uses_selected_model(self):
+        now = app.datetime.now().replace(microsecond=0)
+        document = self.forecast_document(now)
+        document["segments"]["A"]["models"]["ARIMA"] = [
+            {"t": (now - app.timedelta(minutes=11)).strftime("%Y-%m-%d %H:%M"), "v": 10}]
+        state, forecast = self.check_forecast(now=now, forecast=document, model="ARIMA")
+        self.assertIsNotNone(state["forecast"])
+        self.assertFalse(forecast["ready"])
+        self.assertTrue(forecast["status"]["stale"])
+
+    def test_malformed_forecast_is_unavailable(self):
+        now = app.datetime.now().replace(microsecond=0)
+        malformed = [[], "invalid", {}, {"generated_at": None}]
+        for path, value in [
+                (("segments",), []), (("segments", "A"), None),
+                (("segments", "A", "history"), None),
+                (("segments", "A", "models"), []),
+                (("segments", "A", "models", "ARIMAX"), "invalid"),
+                (("segments", "A", "models", "ARIMAX"), [{"t": "bad date", "v": 90}]),
+                (("segments", "A", "models", "ARIMAX"), [{"t": now.strftime(app.TS), "v": "90"}]),
+                (("segments", "A", "models", "ARIMAX"), [{"t": now.strftime(app.TS), "v": None}]),
+                (("segments", "A", "models", "ARIMAX"), [None])]:
+            document = self.forecast_document(now)
+            target = document
+            for key in path[:-1]:
+                target = target[key]
+            target[path[-1]] = value
+            malformed.append(document)
+        for document in malformed:
+            with self.subTest(forecast=document):
+                self.assert_stale_forecast(*self.check_forecast(now=now, forecast=document))
+
+    def test_display_guidance_uses_current_occupancy_with_forecast_present(self):
+        now = app.datetime.now()
+        document = self.forecast_document(now)
+        document["segments"]["B"] = copy.deepcopy(document["segments"]["A"])
+        document["segments"]["B"]["models"]["ARIMAX"][0]["v"] = 10
+        frames = {"platform-A": self.live_frame(20), "platform-B": self.live_frame(90)}
+        with patch.object(app.processor, "live", return_value=frames), \
+                patch.object(app, "read_json", side_effect=lambda name: document if name == "forecast.json" else None):
+            state = app.rebuild_now()
+            self.assertIsNotNone(state["forecast"])
+            self.assertEqual(state["recommendation"],
+                             {"id": "A", "now": 20, "next5": 90, "basis": "current"})
+            display = self.client.get("/api/display", headers=self.headers)
+        self.assertEqual(display.status_code, 200)
+        self.assertEqual(display.get_json()["zone"], "A")
+        self.assertEqual(display.get_json()["title"], "GO TO ZONE A")
+
+    def test_gate_alert_remains_accurate_inside_hysteresis_band(self):
+        frames = {"platform-A": self.live_frame(75)}
+        with patch.object(app.processor, "live", side_effect=lambda: copy.deepcopy(frames)):
+            self.assertTrue(app.rebuild_now()["gate"]["closed"])
+            frames["platform-A"]["occupancy_pct"] = 72
+            state = app.rebuild_now()
+        self.assertTrue(state["gate"]["closed"])
+        self.assertEqual(state["segments"][0]["level"], "moderate")
+        self.assertEqual(state["alerts"][0]["title"], "Entry gate closed: reporting segments reached High")
 
     def test_selected_forecast_model_without_points_is_not_ready(self):
         _, forecast = self.check_forecast(model="X")
