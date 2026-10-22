@@ -3,6 +3,10 @@
 Mirrors pollGateway(): new connection, HTTP/1.0, 250 ms connect and read idle timeouts, the status and
 Content-Length checks before reading the body, then exactly Content-Length bytes. The 30 s fail-safe gap is
 measured between completed valid responses, as the bench does.
+
+One deliberate difference: if the body stalls for more than 250 ms the tool fails that poll, while the
+bench's HTTPClient keeps waiting on an open socket (and can sit there until its fail-safe). A stall is a
+gateway problem either way; the tool reports it instead of hiding it.
 """
 import argparse
 import json
@@ -17,13 +21,19 @@ TIMEOUT_S = 0.25      # bench GATEWAY_HTTP_TIMEOUT_MS: connect and read idle tim
 MAX_BYTES = 512       # bench GATEWAY_RESPONSE_MAX_BYTES
 MAX_LINES = 4         # bench GUIDANCE_LINES
 FAILSAFE_S = 30       # bench FAILSAFE_MS
-HEAD_LIMIT = 4096
+HEAD_LIMIT = 65536    # the firmware has no cap; this only stops a runaway server from filling memory
 
 
 def to_int(value):
     """Arduino String::toInt(): leading integer, otherwise 0."""
     m = re.match(r"\s*([+-]?\d+)", value or "")
     return int(m.group(1)) if m else 0
+
+
+def header_end(raw):
+    """(end of headers, start of body) for a CRLF or bare-LF blank line, or None if not seen yet."""
+    found = [(i, i + len(sep)) for sep in (b"\r\n\r\n", b"\n\n") if (i := raw.find(sep)) >= 0]
+    return min(found) if found else None
 
 
 def poll(host, port, path, host_header):
@@ -33,17 +43,19 @@ def poll(host, port, path, host_header):
             s.settimeout(TIMEOUT_S)
             s.sendall(f"GET {path} HTTP/1.0\r\nHost: {host_header}\r\nConnection: close\r\n\r\n".encode())
             raw = b""
-            while b"\r\n\r\n" not in raw:
+            # the firmware reads header lines up to '\n' and trims them, so a bare LF ending counts too
+            while (end := header_end(raw)) is None:
                 chunk = s.recv(1024)
                 if not chunk or len(raw) > HEAD_LIMIT:
                     return None, "no headers"
                 raw += chunk
-            head, _, body = raw.partition(b"\r\n\r\n")
-            lines = head.decode("latin-1").split("\r\n")
+            head, body = raw[:end[0]], raw[end[1]:]
+            lines = [ln.strip() for ln in head.decode("latin-1").split("\n")]
             parts = lines[0].split(" ")
             status = parts[1] if len(parts) > 1 else "?"
             headers = {k.strip().lower(): v.strip() for k, _, v in (h.partition(":") for h in lines[1:])}
-            size = to_int(headers.get("content-length"))
+            # HTTPClient reports -1 when the header is absent and toInt() of its value otherwise
+            size = to_int(headers["content-length"]) if "content-length" in headers else -1
             if status != "200" or size <= 0 or size > MAX_BYTES:
                 return None, f"status {status}" if status != "200" else f"content-length {size}"
             while len(body) < size:              # read exactly Content-Length bytes, as the bench does

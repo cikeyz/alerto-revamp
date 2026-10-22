@@ -23,8 +23,10 @@ side. `rpi/tests/test_bench_contract.py` checks the response shape and gate beha
   - Other keys (`title`, `levels`, `lang`, `zone`) are allowed and ignored by the bench.
 - `/api/display` must answer for any `Host` header (the captive-portal redirect must never apply to it).
 - Answer quickly under load (every open dashboard stream, every node posting, a forecaster refit running).
-  The bench enforces 250 ms per idle gap, not a total deadline, but a slow answer is a dropped poll waiting to
-  happen; `fake_bench.py` reports the total response time so it can be watched.
+  The bench's 250 ms timeouts apply to connecting and to the wait for the response headers; once it is
+  reading the body it keeps waiting on an open socket, so a gateway that stalls mid-body can hold the bench
+  until its 30 s fail-safe. `fake_bench.py` fails a poll on any 250 ms stall and reports the total response
+  time, so stalls show up in a rehearsal.
 
 Anything else (non-200, missing or oversized length, short body, bad JSON, unknown gate value, more than 4
 lines) is not a valid heartbeat. After 30 s without a valid response the bench enters its fail-safe (taps
@@ -65,4 +67,7 @@ It prints valid polls, errors by kind, response time and the longest gap between
 
 | Date | Gateway | Where | Result (verbatim) |
 | --- | --- | --- | --- |
-| 2026-10-22 | 1.1.0 (running Pi, before the revamp) | laptop over LAN, `--url http://192.168.254.155/api/display --duration 30` | `polls=30; valid=30; errors=none; response_ms median=23.6 / p95=33.8 / max=40.1; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]` |
+| 2026-10-22 | 1.1.0 (running Pi, before the revamp) | laptop over LAN, `--url http://192.168.254.155/api/display --duration 30` | `polls=30; valid=30; errors=none; response_ms median=6.7 / p95=25.5 / max=26.5; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open'), (7.0, 'closed'), (8.0, 'open')]` |
+
+The 1.1.0 run shows the gate closing and reopening within about a second on live data from one node: the
+unsmoothed gate input (improvement backlog C3). The bench would show a one-second Hold.
