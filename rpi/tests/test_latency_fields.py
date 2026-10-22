@@ -1,6 +1,7 @@
 """Latency metadata stays optional on the raw-frame endpoint."""
 import os
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 
@@ -14,6 +15,10 @@ os.environ["DEVICE_KEY"] = ""
 os.environ["ADMIN_PIN"] = ""
 
 import app
+
+
+def tearDownModule():
+    shutil.rmtree(_temp, ignore_errors=True)
 
 
 class LatencyFieldsTest(unittest.TestCase):
@@ -53,11 +58,16 @@ class LatencyFieldsTest(unittest.TestCase):
         self.assertEqual(self.post().status_code, 200)
         _, seg = self.state()
         self.assertIsNone(seg["seq"])
+        self.assertIsInstance(seg["rx_ms"], int)
 
     def test_invalid_seq(self):
-        self.assertEqual(self.post(seq="abc").status_code, 200)
-        _, seg = self.state()
-        self.assertIsNone(seg["seq"])
+        # only a whole number counts; anything else is ignored, never rejected
+        for bad in ("abc", "5", None, 3.7, True, [1], {"n": 1}):
+            with self.subTest(seq=bad):
+                self.assertEqual(self.post(seq=bad).status_code, 200)
+                _, seg = self.state()
+                self.assertIsNone(seg["seq"])
+                self.assertIsInstance(seg["rx_ms"], int)
 
     def test_short_frame(self):
         self.assertEqual(self.post(d=[2500] * 63).status_code, 400)

@@ -104,10 +104,9 @@ def frame():
             raise ValueError("need 64 distances and 64 statuses")
     except (KeyError, ValueError, TypeError) as e:
         return jsonify(error=f"bad frame: {e}"), 400
-    try:
-        seq = int(j.get("seq"))
-    except (ValueError, TypeError, OverflowError):
-        seq = None
+    seq = j.get("seq")
+    if not isinstance(seq, int) or isinstance(seq, bool):
+        seq = None                    # optional; only a whole number counts
     processor.add(dev, d, s, seq=seq)
     return jsonify(ok=True)
 
@@ -230,10 +229,10 @@ def messages(segs, rec, gate):
 
 
 def build_state():
-    now_ms = int(time.time() * 1000)
     s = cfg.load()
     now = datetime.now()
     segs = segment_states(s, now)
+    now_ms = int(time.time() * 1000)  # after reading frames, so now_ms >= every rx_ms in this state
     fc = read_json("forecast.json")
     model = (fc or {}).get("active_model")
     fv = forecast_view(fc, model) if model else {}
