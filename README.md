@@ -22,6 +22,14 @@ VL53L8CX ─ ESP32-S3 node (Node ID) ──Wi-Fi──▶ Raspberry Pi gateway �
 
 ---
 
+## Revamp
+
+- Gateway 1.2.1 and node firmware v1 run on the real Raspberry Pi and node.
+- [Latency measurements](docs/latency-log.md)
+- [Turnstile bench contract](docs/bench-contract.md)
+- [Improvement backlog](docs/improvement-backlog.md)
+- [Node v0 backup](backups/node-v0/README.md)
+
 ## Deliverables status
 
 | Item | Deliverable (Section 2.1) | Status |
@@ -30,7 +38,7 @@ VL53L8CX ─ ESP32-S3 node (Node ID) ──Wi-Fi──▶ Raspberry Pi gateway �
 | (b) | Raspberry Pi gateway: receive, process, store, send to dashboard, diorama output | ✅ Done |
 | (b) | Communication and message format documented | ⚠️ Partly done (summary below; full protocol document ⏳ not yet done) |
 | (c) | Dashboard: live readings, Node ID, crowd level, alerts/gating state | ✅ Done |
-| (c) | Dashboard refreshes every 5 minutes | ⏳ Not yet done (currently refreshes every 5–60 s, set in Settings) |
+| (c) | Dashboard refreshes every 5 minutes | ⏳ Not yet done (live updates over `/api/stream` within about a second of each frame; when the stream is unavailable, polls at the Settings interval, 5-60 s) |
 | (d) | Seasonal Naive forecast, 30 min ahead in 5-min steps, model name shown | ⏳ Not yet done (Seasonal Naive model not yet added) |
 | (d) | Structure ready for ARIMA, ARIMAX, Prophet | ✅ Done |
 | (e) | Demo with ≥1 real ToF node: ESP32-S3 → Pi → Dashboard, gating command, forecast | ⏳ Not yet done (scheduled for the demonstration) |
@@ -150,6 +158,7 @@ fails JSON parsing and the frame is rejected, so keep it a plain counter. Replie
 
 **Gateway → dashboard:** JSON endpoints `/api/state`, `/api/live`, `/api/forecast`, `/api/history`,
 `/api/settings`.
+`/api/stream` is a Server-Sent Events stream carrying live state updates to the dashboard.
 
 ---
 
@@ -159,8 +168,9 @@ Join the **CommuterDensity** Wi-Fi and open **http://10.42.0.1**. The **Dashboar
 - current crowd level (Low / Moderate / High) per segment and for the platform
 - alerts and the **gating state** (gate open / closed)
 
-⏳ **Not yet done:** refresh interval of 5 minutes as specified. It currently refreshes every 5–60 seconds
-(set in Settings).
+⏳ **Not yet done:** refresh interval of 5 minutes as specified. The dashboard receives live updates over
+`/api/stream` within about a second of each frame; when the stream is unavailable, it polls at the Settings
+interval (5-60 s).
 
 ---
 
