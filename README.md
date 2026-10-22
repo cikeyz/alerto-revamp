@@ -131,12 +131,13 @@ sudo ./setup.sh
 ### Communication and message format (summary)
 ⏳ A full protocol document is not yet done. Current messages:
 
-**Node → gateway**, once per second: `POST http://10.42.0.1/frame`, header `X-Device-Key: <DEVICE_KEY>`
+**Node → gateway**, twice per second (2 Hz): `POST http://10.42.0.1/frame`, header `X-Device-Key: <DEVICE_KEY>`
 ```json
 {"device_id": "platform-A", "d": [64 distances in mm], "s": [64 VL53L8CX target status codes], "seq": 123}
 ```
-`device_id` is the Node ID. `seq` is optional: a whole number that increases by exactly 1 per frame (restart from
-1 after a reboot). It lets the gateway's latency probe measure every frame (`docs/latency-log.md`). A number longer than 4300 digits
+`device_id` is the Node ID. `seq` is optional: a whole number that increases by 1 per POST attempt (restart from
+1 after a reboot), so a gap at the gateway means a frame that did not arrive. It lets the gateway's latency
+probe measure received frames (`docs/latency-log.md`). A number longer than 4300 digits
 fails JSON parsing and the frame is rejected, so keep it a plain counter. Replies: `200` OK, `403` wrong key, `400` malformed frame.
 
 **Gateway → diorama ESP32**, poll every 1–2 s: `GET http://10.42.0.1/api/display`

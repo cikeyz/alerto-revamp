@@ -22,8 +22,18 @@ class TrackerTest(unittest.TestCase):
         t.update(10040, 10000, 10)            # warm-up: frame predates the probe
         t.update(20040, 20000, 20)            # frames 11-19 skipped, 20 shown
         self.assertEqual(t.skipped, 9)
+        self.assertEqual(t.lost, 0)
         self.assertEqual(sorted(t.screen), [40] + [1040 + 1000 * k for k in range(9)])
         self.assertEqual(len(t.rows), 2)
+
+    def test_stream_gap_counts_lost_without_interpolating(self):
+        t = probe.Tracker(1, interpolate=False)
+        for seq in (1, 2, 5):
+            t.update(seq * 1000 + 40, seq * 1000, seq)
+        self.assertEqual(t.lost, 2)
+        self.assertEqual(t.skipped, 0)
+        self.assertEqual(t.screen, [40, 40])
+        self.assertEqual(len(t.rows), 3)
 
     def test_same_frame_twice_is_counted_once(self):
         t = probe.Tracker(1)
@@ -242,6 +252,12 @@ class ProbeRunTest(unittest.TestCase):
         code, out, _ = self.run_closing_stream(states)
         self.assertEqual(code, 0)
         self.assertIn("frame_to_screen_ms min=275 / median=275 / p95=275 / max=275 (n=1)", out)
+
+    def test_stream_summary_reports_lost_frames_without_interpolation(self):
+        code, out, _ = self.run_closing_stream([state_doc(seq) for seq in (1, 2, 5)])
+        self.assertEqual(code, 0)
+        self.assertIn("frames shown=3; frames lost=2; resets=0;", out)
+        self.assertIn("frame_to_screen_ms min=40 / median=40 / p95=40 / max=40 (n=2)", out)
 
 
 if __name__ == "__main__":

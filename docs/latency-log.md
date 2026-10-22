@@ -4,21 +4,24 @@ One entry per measurement. Every change aimed at speed adds a new entry with the
 
 ## What the probe measures
 
-`rpi/tools/latency_probe.py` polls `/api/state` like the dashboard does and reports, using only the gateway
-clock:
+`rpi/tools/latency_probe.py` reads `/api/stream` or polls `/api/state` and reports, using only the gateway clock:
 
-- `frame_to_screen_ms`: for every frame, gateway receive time to the first dashboard fetch that shows it or a
+- `frame_to_screen_ms`: for received frames, gateway receive time to the first dashboard fetch that shows it or a
   newer frame. This is the delay a person watching the dashboard experiences. Receive times of frames
-  between two fetches are interpolated from their sequence numbers (assumes a steady send rate). Needs nodes
-  that send `seq` incremented by exactly 1 per frame; without it the probe reports only `age_at_fetch_ms`
-  and warns. The first fetch is warm-up and not counted; a pause in fetching or a node reboot (seq going
-  down) resets the chain instead of inventing frames (`resets`). So does a seq jump larger than the elapsed
+  between two polling fetches are interpolated from their sequence numbers (assumes a steady send rate).
+  Needs nodes that increase `seq` by 1 per POST attempt, so a gap at the gateway means a frame that did not
+  arrive. Without `seq` the probe reports only `age_at_fetch_ms` and warns. The first fetch is warm-up and
+  not counted; a pause in fetching or a node reboot (seq going down) resets the chain instead of inventing
+  frames (`resets`). So does a seq jump larger than the elapsed
   receive time allows at 50 Hz, which catches nodes that send a timestamp instead of a counter. A fetch
   more than `2 x interval + 1 s` after the previous one (probe paused, gateway restart) also resets the chain.
 - `age_at_fetch_ms`: age of the newest frame at each fetch. On its own it understates dashboard latency.
 
 Stream mode uses the event's integer `sent_ms` as visibility time, including the stream throttle wait, and
-falls back to snapshot `now_ms` for older gateways.
+falls back to snapshot `now_ms` for older gateways. It sees every rebuild, so forward sequence gaps count
+as `frames lost` and are excluded from `frame_to_screen_ms`. Polling mode keeps interpolating gaps and
+counting them as `frames skipped`, because those gaps are mostly frames skipped between fetches.
+The CSV gap column is `lost` in stream mode and `skipped` in polling mode.
 
 Not covered: sensor acquisition, node processing, Wi-Fi transit, browser rendering.
 
