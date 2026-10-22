@@ -116,6 +116,29 @@ class ProbeRunTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("'bad payload': 2", out)
 
+    def test_wrong_typed_fields_are_bad_payload(self):
+        bad_rx = state_doc(1)
+        bad_rx["segments"][0]["rx_ms"] = "abc"
+        bad_now = state_doc(1)
+        bad_now["now_ms"] = None
+        bad_seq = state_doc(1)
+        bad_seq["segments"][0]["seq"] = "12"
+        code, out, _ = self.run_probe([bad_rx, bad_now, bad_seq, state_doc(1), state_doc(2)],
+                                      "--interval", "0.05", "--duration", "0.6")
+        self.assertEqual(code, 0)
+        self.assertIn("'bad payload': 3", out)
+
+    def test_missing_segment_and_old_gateway_are_named(self):
+        missing = state_doc(1)
+        missing["segments"][0]["id"] = "B"
+        old_gateway = state_doc(1)
+        del old_gateway["segments"][0]["rx_ms"]
+        code, _, err = self.run_probe([missing, old_gateway],
+                                     "--interval", "0.05", "--duration", "0.4")
+        self.assertEqual(code, 1)
+        self.assertIn("no segment A", err)
+        self.assertIn("no latency fields", err)
+
     def test_unusable_refresh_interval_stops_instead_of_spinning(self):
         code, _, err = self.run_probe([state_doc(1, refresh_s=-5)], "--duration", "5")
         self.assertEqual(code, 2)
