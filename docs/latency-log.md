@@ -73,6 +73,9 @@ stream slot taken, well inside its 250 ms timeout.
 
 ## 2026-10-22: real node v1 on the Pi
 
+`PI_LAN_ADDRESS` stands for the Pi's address on the lab LAN; replace it before running a command.
+On the Pi's own hotspot use 10.42.0.1 directly.
+
 Setup: one real ESP32-S3 N16R8 node (`platform-A`, VL53L8CX on GPIO8/9 at 400 kHz), real
 Raspberry Pi 5 gateway **1.2.0**, and a Windows 11 laptop over the LAN. The laptop requests
 `http://PI_LAN_ADDRESS` with `Host: 10.42.0.1`; the node uses the open `CommuterDensity`
@@ -92,8 +95,6 @@ did not reset the board. The boot capture confirms the direct 0x29 probe, reset 
 sensor-first startup, core-0 networking, core-1 sensing, 4 Hz ranging and the `g` / `v` commands.
 
 The commands below use the scripts in `rpi/tools/`. Stream CSV output was also saved to count sequence gaps.
-
-`PI_LAN_ADDRESS` stands for the Pi's address on the lab LAN; replace it before running a command. On the Pi's own hotspot use 10.42.0.1 directly.
 
 `latency_probe.py --stream --base http://PI_LAN_ADDRESS --host-header 10.42.0.1 --duration 120`:
 
@@ -267,8 +268,8 @@ polls=30; valid=30; errors=none; response_ms median=20.7 / p95=34.1 / max=36.7; 
 The final Pi check at 2026-10-22 18:15:57 shows segment A online, `source: live`,
 `seq: 3822`, `last_seen_s: 0`,
 and occupancy 37.5%.
-Evidence, raw one-second responses, all primary samples, build output and probe lines are saved
-under `.assets/node-v1-2026-10-22/attempt-3/` in the ALERTO hub, outside the worktree.
+The raw one-second responses, all primary samples, build output and probe lines are kept
+with the private 2026-10-22 node evidence.
 
 COM7 safe detach: native USB Serial/JTAG DTR/RTS affect reset/boot; deassert both before close,
 then use `esptool --chip esp32s3 --port COM7 --after hard-reset run` and leave COM7 closed.
