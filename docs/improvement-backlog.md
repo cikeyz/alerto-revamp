@@ -129,6 +129,11 @@ speed.
 - A sensor failure at boot blocks networking forever.
 - The reboot reason can be lost; persist it across reboot.
 - Run a multi-hour soak with heap and stack figures and fault tests (hotspot off/on, gateway down).
+- After the defense, check `esp_ota_get_state_partition()` for `ESP_OTA_IMG_PENDING_VERIFY` before
+  calling image validation, and stop calling once the image is not pending. Today the validation call
+  repeats on every HTTP 200 when it does not return `ESP_OK`, including when the running image is not
+  pending verification, such as just after a USB flash with blank otadata. This is harmless: an otadata
+  read and a UART0 log line per POST, so it stays unchanged before the defense.
 
 ## Found in the 2026-10-22 read-only scans (after the defense)
 

@@ -64,8 +64,9 @@ VL53L8CX ─ ESP32-S3 node (Node ID) ──Wi-Fi──▶ Raspberry Pi gateway �
 
 ## (a) ESP32-S3 sensor node
 
-**Deployment status (2026-10-22):** V1 with non-blocking USB logging passes a 30-minute
-closed-port soak on the real Pi, followed by the stream and display probes, and remains on the node.
+**Deployment status (2026-10-23):** Node firmware v2 now runs on the node, installed over USB
+on 2026-10-23, then updated over Wi-Fi. V1 with non-blocking USB logging passes a 30-minute
+closed-port soak on the real Pi, followed by the stream and display probes.
 The two earlier candidates were rolled back to v0. See `docs/latency-log.md` for the measured
 results, USB logging rule, rollback history and safe serial detach.
 
@@ -101,7 +102,9 @@ results, USB logging rule, rollback history and safe serial detach.
 - Startup probes **0x29** directly and runs a full diagnostic scan only if that probe fails.
   Sensor initialization precedes Wi-Fi; ranging starts afterward. The sensor restarts after
   **3 seconds without frames**, at most once per **10 seconds**. The node logs a reason and reboots
-  after **5 minutes without a successful POST**.
+  after **5 minutes without a successful POST**; boot-time sensor retries share the same
+  **5-minute budget** and then reboot, so a newly installed image that cannot start the sensor
+  is rolled back to the previous image.
 - Power up with the area under the sensor empty; the gateway learns the empty floor from the first ~30 frames.
 - Native USB Serial/JTAG logs at **115200 baud** include timestamps and the reset reason, including brownout.
   Type `g` for the **8x8 grid in cm**, `v` to toggle the once-per-second status line.

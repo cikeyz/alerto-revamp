@@ -371,7 +371,7 @@ minutes, power loss during an update and sensor failure are not fault-injected. 
 on the USB adapter remains unverified. Gateway code, services, calibration,
 hotspot and firewall settings are unchanged.
 
-### Round 2: pre-merge review fixes and sensor-init rollback
+### v2 hardening: placeholder-password guard, bounded boot sensor retries, HTTP 200 validation
 
 The example OTA password is rejected at build time, boot-time sensor retries reboot after
 the existing five-minute budget, and image validation now shares the HTTP 200 success condition.
@@ -405,8 +405,9 @@ After rollback, Wi-Fi responds **328.839 s** from push start
 (**309.557 s** after upload). Exact CPU reset and bootloader-switch instants are
 unobserved with serial closed. Each readback is followed by the required clean start.
 
-Non-blocking finding 3: the OTA onStart pause wait remains unbounded before espota's
-10 s accept window. Both measured correct-password pushes succeed. If that wait completes
-after the sender times out, the connection failure reaches onError and resumes operation;
-the timeout path is source-inspected, not fault-injected. Gateway code, services, calibration,
+Known limitation: the OTA onStart pause wait remains unbounded. espota waits 10 s for the node
+to connect back; if an in-flight POST delays the start past that window, the push fails and
+must be retried. The connection failure reaches onError and the node resumes normal operation.
+Both measured correct-password pushes succeed. The timeout path is source-inspected, not
+fault-injected. Gateway code, services, calibration,
 hotspot, firewall and environment remain unchanged. Mounted operation and power-loss recovery remain untested.
