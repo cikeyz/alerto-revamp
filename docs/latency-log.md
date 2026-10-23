@@ -275,3 +275,24 @@ The earlier serial figures belong to the original build. Sequence continuity is 
 there is no new serial brownout trace. Sensor acquisition, Wi-Fi transit and browser rendering remain
 outside the stream metric. Outage recovery, the 10-second HTTP restart, the 5-minute reboot and a
 physical brownout are not fault-injected; the power supply remains unverified.
+
+## 2026-10-22: gateway 1.2.1 on the Pi with node v1
+
+Setup: real node v1 at 2 Hz, Raspberry Pi 5 with gateway 1.2.1, and a Windows 11 laptop probing over the LAN.
+The laptop uses `http://192.168.254.155` with `Host: 10.42.0.1`. The fake bench baseline precedes the deploy;
+the other bench runs span the `density-web` restart and check the gateway after restart.
+
+| Run | Printed output (verbatim) |
+| --- | --- |
+| Stream probe | `stream; responses=121; errors=none; frames shown=121; frames skipped=0; resets=0; frame_to_screen_ms min=1 / median=2 / p95=9 / max=18 (n=120); age_at_fetch_ms min=1 / median=2 / p95=10 / max=141; stream connections=1` |
+| Polling probe, 1 s interval | `interval=1 s; responses=60; errors=none; frames shown=60; frames skipped=59; resets=0; frame_to_screen_ms min=1 / median=227 / p95=510 / max=556 (n=118); age_at_fetch_ms min=1 / median=2 / p95=2 / max=10; mean /api/state request time=3.628 ms` |
+| Fake bench, baseline 20 s (gateway 1.2.0) | `polls=20; valid=20; errors=none; response_ms median=17.4 / p95=30.2 / max=31.3; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]` |
+| Fake bench, across restart 90 s | `polls=90; valid=90; errors=none; response_ms median=19.1 / p95=29.9 / max=31.0; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]` |
+| Fake bench, fresh 60 s after restart | `polls=60; valid=60; errors=none; response_ms median=6.0 / p95=28.1 / max=30.2; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]` |
+
+Reading: the stream reports a median of 2 ms and p95 of 9 ms from gateway receive to event sent; it does not
+include the interval from frame ready to POST complete on the node (includes the Pi's response), measured at
+a median of 79 ms in the node's own log in the node v1 section, or browser rendering. The 1 s poller reports
+a median of 227 ms and p95 of 510 ms, skipping intermediate frames at the
+node's 2 Hz send rate. All three bench runs have no errors and a longest gap of 1.0 s between valid responses,
+below the 30 s fail-safe. That gap is not an isolated measurement of service downtime.
