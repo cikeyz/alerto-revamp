@@ -291,7 +291,8 @@ the other bench runs span the `density-web` restart and check the gateway after 
 | Fake bench, fresh 60 s after restart | `polls=60; valid=60; errors=none; response_ms median=6.0 / p95=28.1 / max=30.2; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]` |
 
 Reading: the stream reports a median of 2 ms and p95 of 9 ms from gateway receive to event sent; it does not
-include the node-to-Pi leg (median 79 ms from the node's own log, recorded in the node v1 section) or browser
-rendering. The 1 s poller reports a median of 227 ms and p95 of 510 ms, skipping intermediate frames at the
+include the interval from frame ready to POST complete on the node (includes the Pi's response), measured at
+a median of 79 ms in the node's own log in the node v1 section, or browser rendering. The 1 s poller reports
+a median of 227 ms and p95 of 510 ms, skipping intermediate frames at the
 node's 2 Hz send rate. All three bench runs have no errors and a longest gap of 1.0 s between valid responses,
 below the 30 s fail-safe. That gap is not an isolated measurement of service downtime.

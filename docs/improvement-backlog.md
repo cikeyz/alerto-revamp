@@ -17,6 +17,8 @@ improvements and regressions stay traceable. Baseline node firmware: [`backups/n
 
 ## Problem: sensor-to-dashboard lag of several seconds
 
+Baseline as found on 2026-10-22, before the revamp; current measurements are in docs/latency-log.md.
+
 Where the delay comes from, in path order, taken from the code constants:
 
 | Stage | Source | Delay |
@@ -30,11 +32,11 @@ Where the delay comes from, in path order, taken from the code constants:
 
 Also: a Wi-Fi drop blocks the node loop for up to 8 s in `ensureWiFi()`.
 
-No end-to-end latency has been measured yet; the figures above are bounds from the constants.
+End-to-end latency had not been measured at that point; the figures above are bounds from the constants.
 
 ### Measured on the running system (2026-10-22, read-only)
 
-- Gateway `1.1.0`, the same version as this repository. Endpoint response time over the LAN, median of 8:
+- Gateway `1.1.0`, the version in this repository at the time. Endpoint response time over the LAN, median of 8:
   `/api/state` 12 ms, `/api/live` 6 ms, `/api/display` 7 ms, `/api/forecast` 13 ms. Server work per request
   is not the bottleneck; the polling intervals are.
 - Dashboard `refresh_s` is 10 on the running gateway. Node `platform-A` delivers one frame per second.
@@ -98,7 +100,7 @@ speed.
 - **C4. The dashboard mixes two snapshots.** The 8x8 grids come from `/api/live` (1 s) but their colour, the
   tiles and the frame-age check come from `/api/state` (10 s). The grid can show a crowd while the tile still
   says Low, and "No new frames" is computed against a state clock that may be 10 s old, so it can appear
-  20 to 30 s late. Fix: one payload for both (item 2). Done (PR #4).
+  20 to 30 s late. Fix: one payload for both (item 2). Done for the stream path (PR #4); the polling fallback still reads `/api/state` and `/api/live` separately.
 - **C5. Liveness uses the wall clock.** Frame ages are `datetime.now()` differences. A clock step (NTP sync
   now that the Pi has Ethernet, or a missing RTC battery) makes ages negative or huge and flips segments
   online/offline. Fix: monotonic time for ages, wall time only for stored timestamps; fit the RTC battery
@@ -125,7 +127,7 @@ speed.
 
 ## Found in the 2026-10-22 read-only scans (after the defense)
 
-- Minute rows duplicate on restarts and clock steps: no unique bucket key, with unweighted averages.
+- Minute rows can duplicate on backwards clock steps and repeated ingestion (no unique bucket key; averages are unweighted).
 - The in-progress minute is lost on restart because there is no shutdown flush.
 - Invalid frames read as 0% occupancy because usable-zone coverage is not checked.
 - Forecast readiness measures elapsed span rather than observed coverage.
