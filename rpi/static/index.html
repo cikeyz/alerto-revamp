@@ -33,6 +33,8 @@
   .bar { padding-top: env(safe-area-inset-top, 0px); padding-left: max(24px, env(safe-area-inset-left, 0px));
     padding-right: max(24px, env(safe-area-inset-right, 0px)); min-height: calc(76px + env(safe-area-inset-top, 0px)); }
   .bar h1 { font-size: 24px; font-weight: 700; color: var(--ink); margin: 0; white-space: nowrap; }
+  .bar .where { color: var(--muted); padding-left: 18px; border-left: 1px solid var(--line); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
   .bar .icons { margin-left: auto; display: flex; gap: 14px; }
   .icon-btn { background: none; border: 0; padding: 6px; cursor: pointer; color: var(--muted); border-radius: 6px; display: inline-flex; }
   @media (hover: hover) and (pointer: fine) { .icon-btn:hover { color: var(--ink); } }
@@ -185,6 +187,7 @@
   .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid; font-size: 15px; margin-left: 10px; }
   .bdot { display: inline-block; width: 18px; height: 18px; border-radius: 50%; vertical-align: middle; }
   .thr-input { width: 80px; padding: 6px 8px; border: 1px solid var(--line); background: var(--white); }
+  .thr-mobile { display: none; }
   .form-grid { display: grid; gap: 22px; }
   .form-grid label { display: block; font-weight: 700; font-size: 15px; letter-spacing: .02em; text-transform: uppercase; margin-bottom: 10px; color: var(--ink); }
   .form-grid input, .form-grid select { width: 100%; padding: 16px 22px; border: 1px solid var(--line); background: var(--white); font-size: 17px; }
@@ -202,10 +205,18 @@
   dialog { border: 1px solid var(--line); padding: 26px 30px; max-width: 560px; color: var(--text); }
   dialog::backdrop { background: rgba(20, 26, 36, .35); }
   dialog h3 { margin-top: 0; color: var(--ink); }
+  #heights-dlg { width: calc(100% - 24px); padding: 16px; padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+    max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); overflow-y: auto; overscroll-behavior: contain; }
+  .heights-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .heights-head h3 { margin: 0; font-size: 20px; }
+  #heights-grid { margin-top: 16px; gap: 3px; cursor: default; }
+  #heights-grid i { font-size: 14px; font-variant-numeric: tabular-nums; }
+  #heights-grid.lv-low i.occ, #heights-grid.lv-moderate i.occ { color: var(--ink); }
 
   @media (max-width: 900px) {
     .row.r-1-2, .row.r-1-1 { grid-template-columns: minmax(0, 1fr); gap: 0; }
     .bar h1 { font-size: 20px; }
+    .bar .where { display: none; }
   }
   @media (pointer: coarse) {
     input, select, select.pill { font-size: 16px; }
@@ -244,9 +255,21 @@
     .tile .ppl { min-height: 1.45em; }
     .grid8 { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 2px; }
     .grid8 i { min-width: 0; font-size: clamp(9px, 2.4vw, 10px); }
-    .grid8.nums { gap: 1px; margin: 0 -7px; }
-    .lv-low .grid8.nums i.occ, .lv-moderate .grid8.nums i.occ { color: var(--ink); }
     .grid8 .over { font-size: 12px; padding: 4px; overflow-y: auto; overflow-wrap: anywhere; }
+    #s-thr { table-layout: fixed; font-size: 14px; }
+    #s-thr th, #s-thr td { padding: 12px 10px; }
+    #s-thr th:first-child { width: 44%; }
+    #s-thr th:nth-child(2) { width: 31%; white-space: nowrap; }
+    #s-thr th:last-child { width: 25%; }
+    #s-thr .thr-desktop, #s-thr .thr-preview { display: none; }
+    #s-thr .thr-mobile { display: inline; }
+    #s-thr .thr-level { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    #s-thr .bdot { width: 10px; height: 10px; margin: 0; flex: none; }
+    #s-thr .badge { margin: 0; padding: 4px 6px; font-size: 14px; white-space: nowrap; }
+    #s-thr .badge svg { flex: none; }
+    #s-thr .btn.small { padding: 8px 12px; }
+    #s-thr .thr-input { width: 52px; max-width: 100%; font-size: 16px; }
+    #f-base th, #f-base td { white-space: nowrap; }
     .field input, .field select { min-width: 0; width: 100%; }
     .field { flex: 1 1 100%; min-width: 0; }
     .panel .body { padding: 20px 16px; }
@@ -271,6 +294,7 @@
 <header class="top">
   <div class="bar">
     <h1>Station Command Dashboard</h1>
+    <span class="where" id="where" hidden></span>
     <div class="icons">
       <button class="icon-btn" id="go-settings" aria-label="Settings" title="Settings">
         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -359,6 +383,7 @@
     </div>
     <div class="card">
       <h2>Forecast Accuracy</h2>
+      <small class="scroll-hint" id="h-acc-hint" hidden>Swipe to see all columns</small>
       <div id="h-acc"></div>
     </div>
   </section>
@@ -414,7 +439,6 @@
     </div>
     <div class="panel">
       <h3>Density Thresholds</h3>
-      <small class="scroll-hint" id="s-thr-hint" hidden>Swipe to see all columns</small>
       <div class="tablewrap" style="margin:0"><table class="plain" id="s-thr"></table></div>
     </div>
     <div class="panel">
@@ -440,6 +464,7 @@
           <select id="s-model"><option value="auto">Automatic (most accurate)</option><option>ARIMA</option><option>ARIMAX</option><option>Prophet</option></select></div>
         <div><label for="s-station">Station name</label><input id="s-station" maxlength="60"></div>
         <div><label for="s-line">Line</label><input id="s-line" maxlength="60"></div>
+        <div class="hint" id="station-hint">Leave both empty to hide the station and line from the dashboard.</div>
         <div><label>Entry gate</label><label class="check" style="text-transform:none;font-weight:400"><input type="checkbox" id="s-gate"> Close the gate automatically when every segment is High</label></div>
       </div>
     </div>
@@ -463,6 +488,15 @@
 </main>
 <footer class="ver"><div id="ver"></div></footer>
 
+<dialog id="heights-dlg" aria-labelledby="heights-title" aria-describedby="heights-note">
+  <div class="heights-head">
+    <h3 id="heights-title">Segment heights</h3>
+    <form method="dialog"><button class="btn secondary small" id="heights-close" autofocus>Close</button></form>
+  </div>
+  <p class="note" id="heights-note">Height above the floor in cm. Coloured cells are occupied zones.</p>
+  <div class="grid8 nums" id="heights-grid" role="img" aria-label="8 by 8 segment heights in cm"></div>
+</dialog>
+
 <dialog id="help-dlg">
   <h3>How this dashboard works</h3>
   <p>Four ceiling sensors (Seg A–D) measure how much of the floor under them is occupied. The hub turns that into a crowd level for each segment and forecasts the next 30 minutes every 5 minutes.</p>
@@ -483,7 +517,7 @@
     if ($(id).textContent !== value) $(id).textContent = value;
   }
   function updateScrollHint(id) {
-    const wrap = $(id).parentElement, hint = $(id + "-hint");
+    const wrap = $(id).querySelector(".tablewrap") || $(id).parentElement, hint = $(id + "-hint");
     const hidden = wrap.scrollWidth <= wrap.clientWidth;
     if (hint.hidden !== hidden) hint.hidden = hidden;
   }
@@ -593,7 +627,11 @@
   // ---------------------------------------------------------------- dashboard
   function renderState(s) {
     state = s;
-    const title = `${s.station} | Station Command Dashboard`;
+    const station = String(s.station || "").trim(), line = String(s.line || "").trim();
+    const where = [line, station].filter(Boolean).join(" | ");
+    setText("where", where);
+    if ($("where").hidden !== !where) $("where").hidden = !where;
+    const title = station ? `${station} | Station Command Dashboard` : "Station Command Dashboard";
     if (document.title !== title) document.title = title;
     setText("ver", "v" + s.version);
     const d = parseT(s.now);
@@ -674,16 +712,50 @@
 
   // ---------------------------------------------------------------- live 8x8 grids
   let live = {}, showNums = false;
+  const phoneGrid = matchMedia("(max-width: 560px)");
+  let heightsSegment = null;
+  $("heights-grid").innerHTML = "<i></i>".repeat(64) + '<div class="over" id="heights-over" hidden></div>';
+  function syncGridNumbers() {
+    SEGS.forEach(sg => {
+      const grid = $("grid-" + sg);
+      if (grid) grid.classList.toggle("nums", showNums && !phoneGrid.matches);
+    });
+  }
+  function showHeights(sg) {
+    if (!phoneGrid.matches) { showNums = !showNums; syncGridNumbers(); return; }
+    heightsSegment = sg;
+    setText("heights-title", `Seg ${sg} heights (cm)`);
+    $("heights-grid").setAttribute("aria-label", `Seg ${sg}: 8 by 8 heights in cm`);
+    $("heights-dlg").showModal();
+    drawHeights();
+  }
+  $("heights-dlg").addEventListener("close", () => {
+    const trigger = $("grid-" + heightsSegment);
+    heightsSegment = null;
+    if (trigger) trigger.focus({ preventScroll: true });
+  });
+  $("heights-dlg").addEventListener("click", e => {
+    const r = e.currentTarget.getBoundingClientRect();
+    if (e.target === e.currentTarget && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) e.currentTarget.close();
+  });
+  phoneGrid.addEventListener("change", () => {
+    showNums = false; syncGridNumbers();
+    if ($("heights-dlg").open) $("heights-dlg").close();
+  });
   function ensureTiles() {
     if ($("d-map").children.length === 4) return;
     $("d-map").innerHTML = SEGS.map(sg => `<div class="tile lv-unknown" id="tile-${sg}">
         <div class="thead"><span class="seg" id="tseg-${sg}">SEG ${sg}</span><span><span class="pct num" id="tpct-${sg}">—</span> <span class="lv" id="tlv-${sg}"></span></span></div>
-        <div class="grid8" id="grid-${sg}" role="img" aria-label="Seg ${sg} overhead view">${"<i></i>".repeat(64)}<div class="over" id="over-${sg}">No data</div></div>
+        <div class="grid8" id="grid-${sg}" role="button" tabindex="0" aria-label="Show Seg ${sg} heights in cm">${"<i></i>".repeat(64)}<div class="over" id="over-${sg}">No data</div></div>
         <div class="ppl"><span id="tage-${sg}"></span></div></div>`).join("");
     $("d-map").querySelectorAll("[id]").forEach(el => renderedHTML.delete(el.id));
-    SEGS.forEach(sg => $("grid-" + sg).addEventListener("click", () => {
-      showNums = !showNums; SEGS.forEach(x => $("grid-" + x).classList.toggle("nums", showNums));
-    }));
+    syncGridNumbers();
+    SEGS.forEach(sg => {
+      $("grid-" + sg).addEventListener("click", () => showHeights(sg));
+      $("grid-" + sg).addEventListener("keydown", e => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); showHeights(sg); }
+      });
+    });
   }
   function renderTiles(s) {
     ensureTiles();
@@ -726,6 +798,21 @@
         if (c.textContent !== value) c.textContent = value;
       });
     }
+    drawHeights();
+  }
+  function drawHeights() {
+    if (!heightsSegment || !$("heights-dlg").open) return;
+    const source = $("grid-" + heightsSegment), grid = $("heights-grid");
+    const gridClass = "grid8 nums " + $("tile-" + heightsSegment).className.replace("tile ", "");
+    if (grid.className !== gridClass) grid.className = gridClass;
+    const cells = grid.querySelectorAll("i");
+    source.querySelectorAll("i").forEach((c, i) => {
+      if (cells[i].className !== c.className) cells[i].className = c.className;
+      if (cells[i].style.background !== c.style.background) cells[i].style.background = c.style.background;
+      if (cells[i].textContent !== c.textContent) cells[i].textContent = c.textContent;
+    });
+    $("heights-over").hidden = $("over-" + heightsSegment).hidden;
+    setText("heights-over", $("over-" + heightsSegment).textContent);
   }
   function shade(t) {           // light grey -> slate as objects get taller
     const a = [226, 230, 236], b = [120, 132, 150];
@@ -776,6 +863,7 @@
     $("h-table").innerHTML = days.length ? head + body : head + `<tr><td colspan="${segs.length + 2}" style="color:var(--muted)">No data in this range.</td></tr>`;
     updateScrollHint("h-table");
     $("h-acc").innerHTML = accuracyTable(h.metrics, h.best_model, h.fitted_at);
+    updateScrollHint("h-acc");
   }
   attachTip($("h-chart"), i => ($("h-chart")._label || (() => ""))(i));
 
@@ -891,18 +979,18 @@
     if (!settingsData.admin_enabled) setMsg("err", "Changes are disabled until ADMIN_PIN is set on the hub (/etc/commuter-density.env).");
   }
   function renderThresholds(s) {
-    const row = (name, range, lv, key) => `<tr><td>${name}</td><td class="num" id="thr-${lv}">${range}</td>
-      <td><span class="bdot" style="background:var(--${lv === "moderate" ? "mod" : lv})"></span><span class="badge lv-${lv}">${lv === "low" ? checkSvg(16) : lv === "moderate" ? warnSvg("currentColor", 16) : bangSvg(16)} ${LVNAME[lv]}</span></td>
+    const preview = lv => `<span class="bdot" style="background:var(--${lv === "moderate" ? "mod" : lv})"></span><span class="badge lv-${lv}">${lv === "low" ? checkSvg(16) : lv === "moderate" ? warnSvg("currentColor", 16) : bangSvg(16)} ${LVNAME[lv]}</span>`;
+    const row = (name, range, lv, key) => `<tr><td><span class="thr-desktop">${name}</span><span class="thr-mobile thr-level">${preview(lv)}</span></td><td class="num" id="thr-${lv}"><span class="thr-desktop">${range}</span><span class="thr-mobile">${range.replace(/ – /g, "-")}</span></td>
+      <td class="thr-preview">${preview(lv)}</td>
       <td style="text-align:right">${key ? `<button class="btn secondary small" data-edit="${key}">Edit</button>` : ""}</td></tr>`;
-    $("s-thr").innerHTML = `<tr><th>Level</th><th>Threshold (% of floor occupied)</th><th>Dashboard preview</th><th style="text-align:right">Action</th></tr>` +
+    $("s-thr").innerHTML = `<tr><th>Level</th><th><span class="thr-desktop">Threshold (% of floor occupied)</span><span class="thr-mobile">% occupied</span></th><th class="thr-preview">Dashboard preview</th><th style="text-align:right">Action</th></tr>` +
       row("Low", `0 – ${s.moderate_at - 1}`, "low", null) + row("Moderate", `${s.moderate_at} – ${s.high_at - 1}`, "moderate", "moderate_at") + row("High", `${s.high_at}+`, "high", "high_at");
-    updateScrollHint("s-thr");
   }
   $("s-thr").addEventListener("click", e => {
     const b = e.target.closest("[data-edit]"); if (!b) return;
     const key = b.dataset.edit, s = settingsData.settings;
     const cell = $(key === "moderate_at" ? "thr-moderate" : "thr-high");
-    cell.innerHTML = `Starts at <input class="thr-input" type="number" min="1" max="100" id="edit-${key}" value="${s[key]}"> %`;
+    cell.innerHTML = `<span class="thr-desktop">Starts at </span><input class="thr-input" type="number" min="1" max="100" id="edit-${key}" value="${s[key]}" aria-label="${key === "moderate_at" ? "Moderate" : "High"} starts at percent"> %`;
     $("edit-" + key).focus(); b.remove();
   });
   function collect() {
@@ -1001,7 +1089,7 @@
     if (latestSnapshot) renderSnapshot(latestSnapshot);
     startPolling(); refresh(); loadLive();
   });
-  window.addEventListener("resize", () => { if (!document.hidden) { drawDashChart(); renderHistory(); renderForecast(); updateScrollHint("s-thr"); } });
+  window.addEventListener("resize", () => { if (!document.hidden) { drawDashChart(); renderHistory(); renderForecast(); } });
   initDates();
   showTab(location.hash.slice(1) || "dashboard");
   startPolling(); refresh(); loadLive(); connectStream();

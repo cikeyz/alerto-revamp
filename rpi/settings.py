@@ -59,7 +59,7 @@ def validate(new):
         raise ValueError("Moderate must start below High")
     for key in ("station_name", "line_name"):
         if key in new:
-            out[key] = str(new[key]).strip()[:60] or cur[key]
+            out[key] = str(new[key]).strip()[:60]
     if "language" in new:
         if new["language"] not in ("fil", "en"):
             raise ValueError("language must be fil or en")
