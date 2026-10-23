@@ -75,6 +75,11 @@ Ordered by expected impact. Each item gets its own commit or PR with a before/af
     systemd units. `/etc/commuter-density.env` holds the device key, admin PIN and hotspot password, so it is
     backed up privately and never committed.
 
+11. **Wireless node updates while mounted.** Done (node v2): password-protected ArduinoOTA, a required
+    12-character minimum at build time, paused ranging/POSTs/watchdogs during transfers, and rollback
+    until the first successful Pi POST. Wrong-password continuity, a real wireless update, automatic
+    rollback from a wrong-URL image, slot readbacks and a 30-minute closed-port soak pass.
+
 ## Software: consistency and reliability
 
 Found in a second pass. These make the system show or act on the wrong state, which matters as much as raw

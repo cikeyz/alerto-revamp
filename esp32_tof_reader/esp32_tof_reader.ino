@@ -1,5 +1,5 @@
 /*
-  ESP32-S3 + VL53L8CX sensor node v1.
+  ESP32-S3 + VL53L8CX sensor node v2.
   Core 1 samples at 4 Hz; core 0 sends every second frame to the Pi.
   Wiring stays SDA GPIO8, SCL GPIO9, 400 kHz, with no LPn or reset GPIO.
 */
@@ -8,13 +8,22 @@
 #include <HTTPClient.h>
 #include <StreamString.h>
 #include <HWCDC.h>
+#include <ArduinoOTA.h>
 #include <vl53l8cx.h>
 #include <esp_system.h>
+#include <esp_ota_ops.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
 #include <stdarg.h>
+#include <atomic>
 #include "secrets.h"
+
+#ifndef OTA_PASSWORD
+#error "Define OTA_PASSWORD in secrets.h (at least 12 characters)."
+#else
+static_assert(sizeof(OTA_PASSWORD) - 1 >= 12, "OTA_PASSWORD must contain at least 12 characters.");
+#endif
 
 #if CONFIG_FREERTOS_UNICORE || ARDUINO_RUNNING_CORE != 1
 #error "Build for a dual-core ESP32-S3 with Arduino running on core 1."
@@ -80,6 +89,15 @@ uint32_t frameCount = 0;
 uint32_t lastFrameMs = 0;
 uint32_t lastRetryMs = 0;
 uint32_t lastStatusMs = 0;
+std::atomic<bool> otaInProgress{false};
+std::atomic<bool> networkPaused{false};
+std::atomic<bool> sensorPaused{false};
+
+#if CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+extern "C" bool verifyRollbackLater() {
+  return true;
+}
+#endif
 
 void logLine(const char* format, ...) {
   if (xPortGetCoreID() != 1 || !HWCDC::isConnected()) return;
@@ -204,6 +222,32 @@ bool startRanging() {
   return true;
 }
 
+void setupOta() {
+  const String hostname = String("alerto-") + NODE_ID;
+  ArduinoOTA.setHostname(hostname.c_str());
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+  ArduinoOTA.onStart([]() {
+    otaInProgress.store(true);
+    // Finish any in-flight POST before the transfer starts, then discard its queued frame.
+    while (!networkPaused.load() || !sensorPaused.load()) delay(1);
+    xQueueReset(frameQueue);
+  });
+  ArduinoOTA.onError([](ota_error_t) {
+    otaInProgress.store(false);
+  });
+  ArduinoOTA.begin();
+}
+
+void otaTask(void*) {
+  while (WiFi.status() != WL_CONNECTED) vTaskDelay(pdMS_TO_TICKS(100));
+  setupOta();
+  for (;;) {
+    // Authentication is CPU work; a separate task keeps sampling and POSTs scheduled.
+    ArduinoOTA.handle();
+    vTaskDelay(pdMS_TO_TICKS(2));
+  }
+}
+
 void readSensor() {
   if (!sensorRunning) return;
   uint8_t ready = 0;
@@ -275,6 +319,10 @@ void networkTask(void* argument) {
   uint32_t retryMs = 1000;
   uint32_t lastSuccessMs = 0;
   uint32_t lastSeqAdvanceMs = millis();
+  uint32_t pauseStartedMs = 0;
+#if CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+  bool imageValidated = false;
+#endif
   NetworkStatus status;
   status.core = xPortGetCoreID();
   WiFi.persistent(false);
@@ -287,6 +335,22 @@ void networkTask(void* argument) {
 
   for (;;) {
     const uint32_t now = millis();
+    if (otaInProgress.load()) {
+      if (!networkPaused.load()) {
+        pauseStartedMs = now;
+        http.end();
+        client.stop();
+        httpReady = false;
+        networkPaused.store(true);
+      }
+      vTaskDelay(pdMS_TO_TICKS(10));
+      continue;
+    }
+    if (networkPaused.exchange(false)) {
+      // Transfer time does not count against either successful-POST or sequence watchdogs.
+      lastSuccessMs += now - pauseStartedMs;
+      lastSeqAdvanceMs = now;
+    }
     if (now - lastSuccessMs >= POST_WATCHDOG_MS) {
       restartFromNetwork(status, NetworkRestart::NoPost);
     }
@@ -387,6 +451,11 @@ void networkTask(void* argument) {
     status.code = code;
     status.postMs = completedMs - startedMs;
     status.lagMs = completedMs - frame.readyMs;
+#if CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+    if (!imageValidated && code >= 200 && code < 300) {
+      imageValidated = esp_ota_mark_app_valid_cancel_rollback() == ESP_OK;
+    }
+#endif
     if (code == HTTP_CODE_OK) {
       ++status.sent;
       lastSuccessMs = completedMs;
@@ -493,7 +562,7 @@ void setup() {
   Serial.setTxTimeoutMs(0);
   Serial.begin(115200);
   delay(500);
-  logLine("ALERTO sensor node %s v1", NODE_ID);
+  logLine("ALERTO sensor node %s v2", NODE_ID);
   reportResetReason();
   logLine("CPU %u MHz, free heap %u bytes, sensing core %d", getCpuFrequencyMhz(),
           ESP.getFreeHeap(), xPortGetCoreID());
@@ -517,11 +586,29 @@ void setup() {
   delay(500);
   logLine("Step 3/3: start ranging");
   startRanging();
+  if (xTaskCreatePinnedToCore(otaTask, "node-ota", 8192, nullptr, 1, nullptr, 0) != pdPASS) {
+    restartNode("could not create the wireless update task");
+  }
   lastRetryMs = millis() - SENSOR_RETRY_MS;
   logLine("Running. Send every second frame (2 Hz); g = grid in cm, v = toggle 1 s status.");
 }
 
 void loop() {
+  if (otaInProgress.load()) {
+    if (!sensorPaused.load()) {
+      if (sensorRunning) sensor.stop_ranging();
+      sensorRunning = false;
+      haveFrame = false;
+      sensorPaused.store(true);
+      logLine("Wireless update started; ranging and POSTs paused");
+    }
+    delay(2);
+    return;
+  }
+  if (sensorPaused.exchange(false)) {
+    logLine("Wireless update failed; resuming ranging and POSTs");
+    startRanging();
+  }
   readSensor();
   const uint32_t now = millis();
   if ((!sensorRunning || now - lastFrameMs > SENSOR_WATCHDOG_MS) &&
