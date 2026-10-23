@@ -135,6 +135,7 @@
   .btn.secondary { background: var(--white); color: var(--text); border: 1px solid var(--line); font-weight: 400; }
   .btn.small { padding: 8px 20px; font-size: 15px; }
   .tablewrap { overflow-x: auto; margin: 0 -28px -26px; }
+  .scroll-hint { display: none; }
   table.grid { width: 100%; border-collapse: collapse; font-size: 16px; }
   table.grid th { background: #EEF1F6; text-align: left; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; padding: 16px 20px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   table.grid td { padding: 16px 20px; border-bottom: 1px solid var(--line); white-space: nowrap; }
@@ -222,14 +223,14 @@
     .updated time { white-space: nowrap; }
     .card { padding: 18px 16px 20px; }
     .tablewrap { margin: 0 -16px -20px; }
+    .scroll-hint { display: block; margin-top: 4px; color: var(--muted); font-size: 13px; font-weight: 400; }
     .lvlbox { overflow-wrap: anywhere; }
     #d-current { min-height: 78px; }
     #d-current .big { width: 5ch; text-align: right; flex-shrink: 0; }
-    /* Keep the map and chart still as alerts arrive; longer lists scroll inside their reserved space. */
-    #d-alerts { height: 128px; overflow-y: auto; align-content: start; grid-auto-rows: max-content; scrollbar-gutter: stable; }
+    #d-alerts { height: auto; min-height: 54px; }
     #d-alerts .lvlbox { min-height: 54px; }
     #d-gate { min-height: 58px; }
-    #d-fc-alert { height: 160px; overflow-y: auto; scrollbar-gutter: stable; }
+    #d-fc-alert { height: auto; min-height: 0; }
     #d-fc-empty { min-height: 360px; }
     #f-empty { min-height: 380px; }
     .alertbar > svg, .reco > svg, .tile .seg svg, .check input { flex-shrink: 0; }
@@ -246,9 +247,9 @@
     .field input, .field select { min-width: 0; width: 100%; }
     .field { flex: 1 1 100%; min-width: 0; }
     .panel .body { padding: 20px 16px; }
-    .commuter { display: grid; grid-template-columns: 66px minmax(0, 1fr); grid-template-rows: minmax(180px, auto) 72px; gap: 16px; align-items: start; }
+    .commuter { display: grid; grid-template-columns: 66px minmax(0, 1fr); gap: 16px; align-items: start; }
     .commuter .txt { min-width: 0; overflow-wrap: anywhere; }
-    .commuter .zone { grid-column: 1 / -1; width: 100%; height: 72px; padding: 14px; gap: 8px; justify-content: center; white-space: normal; }
+    .commuter .zone { grid-column: 1 / -1; width: 100%; padding: 14px; gap: 8px; justify-content: center; white-space: normal; }
     .commuter .zone .p { width: 5ch; text-align: center; }
     .pill { white-space: normal; }
     .actions > * { max-width: 100%; }
@@ -407,7 +408,7 @@
       <p>Manage density thresholds and global system preferences.</p>
     </div>
     <div class="panel">
-      <h3>Density Thresholds</h3>
+      <h3>Density Thresholds<small class="scroll-hint">Swipe to see all columns</small></h3>
       <div class="tablewrap" style="margin:0"><table class="plain" id="s-thr"></table></div>
     </div>
     <div class="panel">
