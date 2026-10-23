@@ -5,7 +5,8 @@ The ESP32 sends one raw 8x8 frame per second (64 distances + 64 target statuses)
 For each sensor this module:
   - learns an empty-floor background (median of the first CALIB_FRAMES frames, or
     after a recalibration request), saved to data/background_<id>.json
-  - marks zones where something is >= HEIGHT_THRESHOLD_MM above the floor
+  - marks zones where something is > HEIGHT_THRESHOLD_MM above the floor
+  - keeps connected zones only when their peak reaches MIN_PEAK_MM
   - groups occupied zones into blobs and estimates people
   - averages each minute into one row in the `readings` table (same table the
     forecast and dashboard already use)
@@ -20,6 +21,7 @@ from datetime import datetime, timedelta
 import store
 
 HEIGHT_THRESHOLD_MM = float(os.environ.get("HEIGHT_THRESHOLD_MM", 400))
+MIN_PEAK_MM = float(os.environ.get("MIN_PEAK_MM", 700))
 ZONES_PER_PERSON = float(os.environ.get("ZONES_PER_PERSON", 3.0))
 MIN_BLOB_ZONES = int(os.environ.get("MIN_BLOB_ZONES", 2))
 CALIB_FRAMES = int(os.environ.get("CALIB_FRAMES", 30))
@@ -33,17 +35,16 @@ def _bg_path(dev):
     return os.path.join(os.path.dirname(store.DB_PATH), f"background_{safe}.json")
 
 
-def estimate_people(occ):
+def _components(occ):
     seen = [False] * 64
-    people = 0
     for i in range(64):
         if not occ[i] or seen[i]:
             continue
-        stack, size = [i], 0
+        stack, component = [i], []
         seen[i] = True
         while stack:
             z = stack.pop()
-            size += 1
+            component.append(z)
             r, c = divmod(z, 8)
             for rr, cc in ((r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)):
                 if 0 <= rr < 8 and 0 <= cc < 8:
@@ -51,6 +52,13 @@ def estimate_people(occ):
                     if occ[n] and not seen[n]:
                         seen[n] = True
                         stack.append(n)
+        yield component
+
+
+def estimate_people(occ):
+    people = 0
+    for component in _components(occ):
+        size = len(component)
         if size >= MIN_BLOB_ZONES:
             people += max(1, round(size / ZONES_PER_PERSON))
     return people
@@ -105,11 +113,19 @@ class Sensor:
         bg = self.background
         valid = [s[i] in VALID_STATUS and d[i] > 0 and bg[i] > 0 for i in range(64)]
         occ = [valid[i] and (bg[i] - d[i]) > HEIGHT_THRESHOLD_MM for i in range(64)]
-        n_occ = sum(occ)
-        if n_occ == 0:
+        # Drift still depends on raw occupancy, including returns filtered below.
+        if not any(occ):
             for i in range(64):
                 if valid[i]:
                     bg[i] += BG_ADAPT_RATE * (d[i] - bg[i])
+        if MIN_PEAK_MM > 0:
+            filtered = [False] * 64
+            for component in _components(occ):
+                if max(bg[i] - d[i] for i in component) >= MIN_PEAK_MM:
+                    for i in component:
+                        filtered[i] = True
+            occ = filtered
+        n_occ = sum(occ)
         people = estimate_people(occ)
         occ_pct = n_occ * 100.0 / 64
         self.last = {"d": d, "s": s, "occ": occ, "people": people, "occupancy_pct": round(occ_pct, 1),

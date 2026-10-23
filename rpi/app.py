@@ -46,7 +46,7 @@ PORTAL_NAME = os.environ.get("PORTAL_NAME", "alerto.lan").lower()
 DEVICE_KEY = os.environ.get("DEVICE_KEY", "")
 ADMIN_PIN = os.environ.get("ADMIN_PIN", "")
 TS = "%Y-%m-%d %H:%M:%S"
-VERSION = "1.2.1"
+VERSION = "1.2.3"
 SNAPSHOT_MAX_AGE_S = 10
 FORECAST_POINT_MAX_AGE = timedelta(minutes=10)
 

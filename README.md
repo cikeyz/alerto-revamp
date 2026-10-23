@@ -173,6 +173,13 @@ sudo ./setup.sh
 - Logs: `journalctl -u density-web -f`, `journalctl -u density-forecast -f`.
 - Fit the Pi 5 RTC battery so the clock is kept without internet.
 
+The gateway first marks valid zones more than 400 mm above the learned background, then groups
+zones that share an edge. A group counts toward occupancy only if its highest return reaches
+`MIN_PEAK_MM` (700 mm by default). This removes low wall flicker while keeping lower arm or edge
+zones attached to a taller body return. A single tall zone still counts toward occupancy.
+Background drift uses the original, unfiltered zone mask. Set `MIN_PEAK_MM=0` to restore the
+previous rule; calibration files and the `/api/display` response format stay the same.
+
 ### Communication and message format (summary)
 ⏳ A full protocol document is not yet done. Current messages:
 

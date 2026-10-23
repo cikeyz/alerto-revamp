@@ -411,3 +411,56 @@ must be retried. The connection failure reaches onError and the node resumes nor
 Both measured correct-password pushes succeed. The timeout path is source-inspected, not
 fault-injected. Gateway code, services, calibration,
 hotspot, firewall and environment remain unchanged. Mounted operation and power-loss recovery remain untested.
+
+## 2026-10-23: offline component peak filter, gateway 1.2.3
+
+The 400 mm zone rule counts short wall returns as occupancy. Gateway 1.2.3 groups qualifying
+zones that share an edge and keeps a group only when its highest return reaches 700 mm.
+Lower arm and body-edge zones remain occupied when connected to that taller return. A single
+tall zone still counts toward occupancy. `MIN_PEAK_MM` sets the peak requirement; `0` restores
+the previous rule. Background adaptation still uses the raw 400 mm mask, and calibration files
+and the `/api/display` format are unchanged.
+
+Offline replay uses 299 EMPTY frames and 159 WALK frames with their recorded background.
+The fixed WALK labels identify 57 frames with at least one occupied return reaching 900 mm;
+these are a sensing proxy, not an independent position log. Results:
+
+- EMPTY false frames: **69/299 to 0/299**. The 75 false zone hits measure **445-578 mm**.
+  There are 64 per-zone runs, 56 lasting one frame. Most hits stand alone, but three components
+  contain two adjacent zones each.
+- Recorded person frames detected: **57/57 before and after**. Mean occupied zones per labelled
+  frame fall from **2.7895 to 2.5263**, with a minimum of **1 before and after**. Mean displayed
+  occupancy falls from **4.3544% to 3.9474%**, with a minimum of **1.6% before and after**.
+- Relearning from each of **270 sliding 30-frame EMPTY windows**, then testing the other
+  269 EMPTY frames, gives **0 false frames in every window**. The previous rule's worst/median
+  are **68/25**. EMPTY and WALK replay separately, with normal background drift.
+
+Three window comparisons remove the same WALK frame, sequence **4992**. In the recorded
+background, its person return is at zone 23, about 1315 mm above the background, alongside a
+541 mm wall return at zone 40. Those three calibration windows have no valid samples for
+zone 23, so that zone becomes unusable. The previous rule then reports occupancy only from
+the wall return, about 513-521 mm under those backgrounds. Removing it is the intended result;
+the filter loses no usable person return in these comparisons and does not repair the missing
+calibration samples. A 600 mm peak has the same frame retention, but 700 mm leaves about
+122 mm above the highest recorded false return. A 900 mm peak loses 52 paired window detections.
+
+The implemented `Sensor` matches **116,476 occupancy arrays and background arrays** across the
+recorded, continuous-stream and window comparisons, with zero mismatches against the offline
+replay. With the filter disabled, all **116,476 complete sensor states** match the previous code.
+All **544 stream minute writes** match the expected filtered occupancy and people aggregates.
+The **77-test suite passes**, including eight new synthetic component tests and the existing
+bench contract tests; `git diff --check` passes.
+
+Local gateway 1.2.3 on Windows, Python 3.13.14, synthetic node at 2 Hz, after the real 30-frame
+calibration. The following 20 s bench and stream checks run together:
+
+```text
+polls=20; valid=20; errors=none; response_ms median=12.0 / p95=21.8 / max=25.9; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]
+stream; responses=41; errors=none; frames shown=41; frames lost=0; resets=0; frame_to_screen_ms min=5 / median=6 / p95=17 / max=110 (n=40); age_at_fetch_ms min=5 / median=6 / p95=46 / max=359; stream connections=1
+frames sent=80; failures=0; mean POST time=12.709 ms
+```
+
+This is offline and local software evidence. No chair stream, seated-person recording, other
+venue or prospective physical validation is available. An isolated chair-seat-height return
+below 700 mm is intentionally excluded. Gateway 1.2.3 is not deployed in this measurement;
+the Raspberry Pi, node, services and stored calibration are untouched.
