@@ -75,7 +75,7 @@ stream slot taken, well inside its 250 ms timeout.
 
 Setup: one real ESP32-S3 N16R8 node (`platform-A`, VL53L8CX on GPIO8/9 at 400 kHz), real
 Raspberry Pi 5 gateway **1.2.0**, and a Windows 11 laptop over the LAN. The laptop requests
-`http://<pi-lan-address>` with `Host: 10.42.0.1`; the node uses the open `CommuterDensity`
+`http://PI_LAN_ADDRESS` with `Host: 10.42.0.1`; the node uses the open `CommuterDensity`
 hotspot and posts to `http://10.42.0.1/frame`. Sampling is 4 Hz autonomous with 10 ms integration;
 sending is 2 Hz. CPU remains 80 MHz, TX remains 8.5 dBm, and PSRAM is disabled.
 Built with Arduino CLI 1.5.1, ESP32 core 3.3.12 and STM32duino VL53L8CX 2.1.0 using the node
@@ -93,19 +93,21 @@ sensor-first startup, core-0 networking, core-1 sensing, 4 Hz ranging and the `g
 
 The commands below use the scripts in `rpi/tools/`. Stream CSV output was also saved to count sequence gaps.
 
-`latency_probe.py --stream --base http://<pi-lan-address> --host-header 10.42.0.1 --duration 120`:
+`PI_LAN_ADDRESS` stands for the Pi's address on the lab LAN; replace it before running a command. On the Pi's own hotspot use 10.42.0.1 directly.
+
+`latency_probe.py --stream --base http://PI_LAN_ADDRESS --host-header 10.42.0.1 --duration 120`:
 
 ```text
 stream; responses=241; errors=none; frames shown=241; frames skipped=0; resets=0; frame_to_screen_ms min=2 / median=2 / p95=10 / max=174 (n=240); age_at_fetch_ms min=2 / median=2 / p95=10 / max=174; stream connections=1
 ```
 
-`latency_probe.py --base http://<pi-lan-address> --host-header 10.42.0.1 --interval 1 --duration 60`:
+`latency_probe.py --base http://PI_LAN_ADDRESS --host-header 10.42.0.1 --interval 1 --duration 60`:
 
 ```text
 interval=1 s; responses=60; errors=none; frames shown=60; frames skipped=59; resets=0; frame_to_screen_ms min=1 / median=176 / p95=506 / max=664 (n=118); age_at_fetch_ms min=1 / median=2 / p95=2 / max=3; mean /api/state request time=3.919 ms
 ```
 
-`fake_bench.py --url http://<pi-lan-address>/api/display --host-header 10.42.0.1 --duration 60`:
+`fake_bench.py --url http://PI_LAN_ADDRESS/api/display --host-header 10.42.0.1 --duration 60`:
 
 ```text
 polls=60; valid=60; errors=none; response_ms median=7.3 / p95=30.5 / max=31.9; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]
@@ -166,7 +168,7 @@ or changing firmware source. App SHA-256:
 After upload, DTR and RTS are released, the serial handle is closed, and
 `esptool --chip esp32s3 --port COM7 --after hard-reset run` establishes a clean start at
 17:15:42 PHT. COM7 is never opened between that clean start and the failed HTTP observation.
-The real Pi is read over LAN at `http://<pi-lan-address>`, with `Host: 10.42.0.1`;
+The real Pi is read over LAN at `http://PI_LAN_ADDRESS`, with `Host: 10.42.0.1`;
 the gateway stays on 1.2.0 and is not changed.
 
 The planned five-minute run has 30 primary samples ten seconds apart, with a one-second
@@ -203,7 +205,7 @@ COM7 safe detach: native USB Serial/JTAG DTR/RTS affect reset/boot; deassert bot
 
 Result: **PASS, fixed v1 retained.** One real ESP32-S3 N16R8 and VL53L8CX node sends to the real
 Pi 5 gateway over `CommuterDensity`; the Windows 11 laptop reads the Pi over LAN at
-`http://<pi-lan-address>` with `Host: 10.42.0.1`. No Pi configuration is changed.
+`http://PI_LAN_ADDRESS` with `Host: 10.42.0.1`. No Pi configuration is changed.
 Board settings, 4 Hz sampling, 2 Hz sends, CPU 80 MHz and TX 8.5 dBm remain as above.
 The fixed build uses **1,040,649 / 3,145,728 bytes** of flash and **52,248 / 327,680 bytes** of static RAM.
 
@@ -246,7 +248,7 @@ is **1510 ms**, a conservative bound on internal inter-frame gaps;
 maximum observed frame age is **35 ms**, maximum `last_seen_s` is
 **0**, and the largest watch fetch interval is **1.058 seconds**.
 
-`latency_probe.py --stream --base http://<pi-lan-address> --host-header 10.42.0.1 --duration 60`:
+`latency_probe.py --stream --base http://PI_LAN_ADDRESS --host-header 10.42.0.1 --duration 60`:
 
 ```text
 stream; responses=122; errors=none; frames shown=122; frames skipped=0; resets=0; frame_to_screen_ms min=2 / median=2 / p95=9 / max=207 (n=121); age_at_fetch_ms min=2 / median=2 / p95=9 / max=455; stream connections=1
@@ -256,7 +258,7 @@ The saved stream CSV contains 122 frames, sequences
 3639 through 3760, with
 0 missing sequences (0.000% gaps).
 
-`fake_bench.py --url http://<pi-lan-address>/api/display --host-header 10.42.0.1 --duration 30`:
+`fake_bench.py --url http://PI_LAN_ADDRESS/api/display --host-header 10.42.0.1 --duration 30`:
 
 ```text
 polls=30; valid=30; errors=none; response_ms median=20.7 / p95=34.1 / max=36.7; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]
@@ -279,7 +281,7 @@ physical brownout are not fault-injected; the power supply remains unverified.
 ## 2026-10-22: gateway 1.2.1 on the Pi with node v1
 
 Setup: real node v1 at 2 Hz, Raspberry Pi 5 with gateway 1.2.1, and a Windows 11 laptop probing over the LAN.
-The laptop uses `http://<pi-lan-address>` with `Host: 10.42.0.1`. The fake bench baseline precedes the deploy;
+The laptop uses `http://PI_LAN_ADDRESS` with `Host: 10.42.0.1`. The fake bench baseline precedes the deploy;
 the other bench runs span the `density-web` restart and check the gateway after restart.
 
 | Run | Printed output (verbatim) |
@@ -472,7 +474,7 @@ Gateway **1.2.3** from merged main `c1d71c6` runs on the real Pi 5. The deploy i
 `rpi/app.py`, `rpi/frames.py` and `rpi/static/index.html`; source, staging and installed
 SHA-256 hashes agree. `density-web` restarts at **01:16:41 PHT (UTC+08:00)**.
 `density-forecast` remains active with the same process and activation time.
-The laptop reaches `http://<pi-lan-address>` with `Host: 10.42.0.1`.
+The laptop reaches `http://PI_LAN_ADDRESS` with `Host: 10.42.0.1`.
 
 Pre-checks find both services active and installed hashes matching gateway 1.2.1.
 The env file has no `MIN_PEAK_MM` key, so the default **700 mm** applies.
@@ -516,7 +518,7 @@ show **v1.2.3**. The journal since the restart has **zero tracebacks**.
 Two earlier attempts are restored to verified 1.2.1 before the accepted attempt. The first
 state read uses minute fallback before the first live frame and has no sequence yet;
 the live-sequence check now waits for that frame. Both earlier 90 s bench windows record
-**89/90 valid**, one socket timeout and a **2.0 s** longest gap; the first window also spans
-its rollback restart. Immediate rollback checks record 29/30; settled rollback checks pass
+**89/90 valid**, one socket timeout and a **2.0 s** longest gap; the first window spans both
+its deploy and rollback restarts. Immediate rollback checks record 29/30; settled rollback checks pass
 30/30, with 121 stream frames and zero lost. A separate steady-state bench passes 60/60.
 The accepted restart window does not guarantee zero missed polls at every restart phase.

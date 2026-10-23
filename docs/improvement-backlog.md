@@ -9,7 +9,7 @@ improvements and regressions stay traceable. Baseline node firmware: [`backups/n
 - PR #3: the turnstile bench contract, response and gate tests, and `rpi/tools/fake_bench.py` lock down `/api/display`.
 - PR #4: gateway 1.2.0 adds a `StateBuilder` thread, one gate decision per rebuild, `/api/stream` with 4 streams at up to 4 events/s each, a boot id, fast startup 503, a 30 s client watchdog and gated forecast reloads.
 - PR #6: node firmware v1 adds 4 Hz sampling, 2 Hz sends, `seq` per POST attempt, core-0 networking, reused HTTP/1.1, Wi-Fi sleep off, non-blocking USB logs, a 10 s seq-stall HTTP restart, a 5-minute no-success reboot and gitignored `secrets.h`.
-- PR #9: dashboard 1.2.2 removes the line/station header and people-count wording, and improves mobile layout.
+- PR #9: gateway 1.2.2 changes the dashboard: removes the line/station header and people-count wording, and improves the mobile layout.
 - PR #10: gateway 1.2.3 retains occupied components only when their peak reaches 700 mm. Deployed 2026-10-24 with the dashboard changes; live acceptance is in docs/latency-log.md.
 - Guidance selects the segment with the lowest current occupancy and keeps forecast values for existing consumers.
 - Forecasts expire after 15 minutes or when their first point is more than 10 minutes in the past.

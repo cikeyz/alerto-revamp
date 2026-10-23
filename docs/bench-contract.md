@@ -68,9 +68,11 @@ It prints valid polls, errors by kind, response time and the longest gap between
 
 ## Measurements
 
+`PI_LAN_ADDRESS` stands for the Pi's address on the lab LAN; replace it before running a command. On the Pi's own hotspot use 10.42.0.1 directly.
+
 | Date | Gateway | Where | Result (verbatim) |
 | --- | --- | --- | --- |
-| 2026-10-22 | 1.1.0 (running Pi, before the revamp) | laptop over LAN, `--url http://<pi-lan-address>/api/display --duration 30` | `polls=30; valid=30; errors=none; response_ms median=6.7 / p95=25.5 / max=26.5; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open'), (7.0, 'closed'), (8.0, 'open')]` |
+| 2026-10-22 | 1.1.0 (running Pi, before the revamp) | laptop over LAN, `--url http://PI_LAN_ADDRESS/api/display --duration 30` | `polls=30; valid=30; errors=none; response_ms median=6.7 / p95=25.5 / max=26.5; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open'), (7.0, 'closed'), (8.0, 'open')]` |
 | 2026-10-22 | 1.2.0 (live push, local laptop) | 4 nodes at 2 Hz, 4 streams open, `--duration 85` | `polls=85; valid=85; errors=none; response_ms median=3.2 / p95=25.8 / max=26.9; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]` |
 | 2026-10-22 | 1.2.0 deploy | running Pi over LAN, across the `density-web` restart | `polls=90; valid=90; errors=none; response_ms median=21.5 / p95=30.8 / max=52.6; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]` |
 | 2026-10-22 | 1.2.0 deploy | running Pi over LAN, after restart | `polls=60; valid=60; errors=none; response_ms median=23.3 / p95=30.5 / max=30.8; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]` |
