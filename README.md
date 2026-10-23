@@ -123,7 +123,7 @@ esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,CPUFreq=80,FlashMode=dio,FlashSi
 
 Install v2 once over USB. Later updates use ArduinoOTA from ESP32 core 3.3.12 and the two existing
 3 MB app slots. Set a unique `OTA_PASSWORD` of at least 12 characters in `secrets.h`; missing or
-short passwords fail compilation. Keep the same password for subsequent builds.
+short or example-placeholder passwords fail compilation. Keep the same password for subsequent builds.
 The hostname is `alerto-<NODE_ID>.local`, for example `alerto-platform-A.local`.
 
 Push from the Pi because the node must connect back to the sender on its hotspot. Set the local
@@ -143,12 +143,13 @@ running the push command. If mDNS is unavailable, replace the node hostname with
 from `ip neigh`. The node listens on UDP 3232 and connects back to Pi TCP 3233; if that connection is
 blocked, stop and check the network policy before changing any firewall or hotspot settings.
 Do not enable espota debug output, which prints its authentication options.
+During a push, espota.py takes the password as `-a`, making it visible in the Pi's process list, so push only from a Pi account nobody else uses.
 
 Authentication runs in a separate task so password checks leave sampling and POSTs scheduled.
 Ranging and POSTs pause during the transfer, and both network watchdogs exclude that pause.
 A rejected password leaves normal operation running; transfer errors resume ranging and POSTs
 without a reboot. A successful transfer reboots into the other app slot. With the core 3.3.12
-rollback-enabled bootloader, the new image becomes valid only after its first HTTP 2xx POST to
+rollback-enabled bootloader, the new image becomes valid only after its first HTTP 200 POST to
 the Pi. If no POST succeeds, the existing five-minute watchdog reboots and restores the previous
 image. Keep the previous working USB build available for recovery.
 

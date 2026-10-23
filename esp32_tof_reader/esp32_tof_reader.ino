@@ -23,6 +23,14 @@
 #error "Define OTA_PASSWORD in secrets.h (at least 12 characters)."
 #else
 static_assert(sizeof(OTA_PASSWORD) - 1 >= 12, "OTA_PASSWORD must contain at least 12 characters.");
+constexpr auto stringsEqual = [](const char* left, const char* right) {
+  while (*left && *left == *right) {
+    ++left;
+    ++right;
+  }
+  return *left == *right;
+};
+static_assert(!stringsEqual(OTA_PASSWORD, "replace-ota-password"), "OTA_PASSWORD must not use the example placeholder.");
 #endif
 
 #if CONFIG_FREERTOS_UNICORE || ARDUINO_RUNNING_CORE != 1
@@ -451,12 +459,12 @@ void networkTask(void* argument) {
     status.code = code;
     status.postMs = completedMs - startedMs;
     status.lagMs = completedMs - frame.readyMs;
-#if CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
-    if (!imageValidated && code >= 200 && code < 300) {
-      imageValidated = esp_ota_mark_app_valid_cancel_rollback() == ESP_OK;
-    }
-#endif
     if (code == HTTP_CODE_OK) {
+#if CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+      if (!imageValidated) {
+        imageValidated = esp_ota_mark_app_valid_cancel_rollback() == ESP_OK;
+      }
+#endif
       ++status.sent;
       lastSuccessMs = completedMs;
     } else {
@@ -568,7 +576,11 @@ void setup() {
           ESP.getFreeHeap(), xPortGetCoreID());
   logLine("Step 1/3: sensor init on SDA=GPIO8 SCL=GPIO9 at 400 kHz");
   Wire.begin(SDA_PIN, SCL_PIN, I2C_HZ);
+  const uint32_t sensorInitStartedMs = millis();
   while (!initSensor()) {
+    if (millis() - sensorInitStartedMs >= POST_WATCHDOG_MS) {
+      restartNode("sensor init failed for 5 minutes");
+    }
     logLine("Retrying sensor init in 3 seconds");
     delay(3000);
   }

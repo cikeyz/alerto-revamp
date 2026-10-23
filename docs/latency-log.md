@@ -370,3 +370,43 @@ because serial stays closed. A failed transfer after authentication, an OTA tran
 minutes, power loss during an update and sensor failure are not fault-injected. Mounted operation
 on the USB adapter remains unverified. Gateway code, services, calibration,
 hotspot and firewall settings are unchanged.
+
+### Round 2: pre-merge review fixes and sensor-init rollback
+
+The example OTA password is rejected at build time, boot-time sensor retries reboot after
+the existing five-minute budget, and image validation now shares the HTTP 200 success condition.
+Setup order and Wi-Fi startup are unchanged. The README records password visibility in the
+Pi process list. The fixed build uses **1,098,249 / 3,145,728 bytes**, with **zero warnings**;
+the example password and an 11-character password both fail their static assertions.
+
+- Fixed OTA: upload exits 0; first POST returns **25.497 s**
+  from push start (**6.378 s** after upload). The pre/post
+  sequence rates are **2.017979 / 2.011817 Hz**.
+  After more than 60 s of normal posting, app0 at `0x10000`, sequence 3, is VALID;
+  its full **1,098,400-byte** readback matches the pushed SHA-256 `4cc0aae9d217c2e12fc6cb08ae11324648e874d7286c2fcdbfe2ec848b3a7a8e`.
+- Swapped-I2C throwaway image: upload exits 0 and no POST arrives until automatic recovery.
+  The first POST returns **329.527 s** from push start,
+  **310.244 s** after upload. Pre/post rates are
+  **2.008669 / 1.999926 Hz**. Metadata shows app1 sequence 4
+  ABORTED, app0 sequence 3 VALID, and the app0 readback retains the same fixed hash.
+- Final closed-port watch: **599.956 s**, **60/60 primary samples**,
+  **601/601 watch reads**, **2.005147 Hz**, largest observed receive gap
+  **1511 ms**, no reset or stall over 3 s. The 60 s stream shows
+  **121 frames**, **0 missing sequences**. Exact stream and bench output:
+
+```text
+stream; responses=121; errors=none; frames shown=121; frames lost=0; resets=0; frame_to_screen_ms min=1 / median=2 / p95=10 / max=79 (n=120); age_at_fetch_ms min=1 / median=2 / p95=10 / max=341; stream connections=1
+polls=30; valid=30; errors=none; response_ms median=14.3 / p95=28.7 / max=30.7; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'closed')]
+```
+
+ICMP brackets initial reboot/network loss at **19.128-19.501 s**
+from the fixed push start and **19.292-19.768 s** from the fixture push start.
+After rollback, Wi-Fi responds **328.839 s** from push start
+(**309.557 s** after upload). Exact CPU reset and bootloader-switch instants are
+unobserved with serial closed. Each readback is followed by the required clean start.
+
+Non-blocking finding 3: the OTA onStart pause wait remains unbounded before espota's
+10 s accept window. Both measured correct-password pushes succeed. If that wait completes
+after the sender times out, the connection failure reaches onError and resumes operation;
+the timeout path is source-inspected, not fault-injected. Gateway code, services, calibration,
+hotspot, firewall and environment remain unchanged. Mounted operation and power-loss recovery remain untested.
