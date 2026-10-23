@@ -17,20 +17,25 @@
     --font: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
-  html { -webkit-text-size-adjust: 100%; }
+  html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var(--font); }
   button, input, select { font: inherit; color: inherit; }
+  button, nav.tabs a, .grid8 { touch-action: manipulation; }
+  button, nav.tabs a { user-select: none; -webkit-user-select: none; }
+  button:active, nav.tabs a:active, .grid8:active { filter: brightness(.88); }
   :focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
-  .num { font-variant-numeric: tabular-nums; }
+  .num, .updated, .srow, .lvlbox, .alertbar, .note, .tile, .exo .v { font-variant-numeric: tabular-nums; }
   [hidden] { display: none !important; }
 
   /* header + tabs */
   header.top { background: var(--white); border-bottom: 1px solid var(--line); }
   .bar { max-width: 1240px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; gap: 18px; min-height: 76px; }
+  .bar { padding-top: env(safe-area-inset-top, 0px); padding-left: max(24px, env(safe-area-inset-left, 0px));
+    padding-right: max(24px, env(safe-area-inset-right, 0px)); min-height: calc(76px + env(safe-area-inset-top, 0px)); }
   .bar h1 { font-size: 24px; font-weight: 700; color: var(--ink); margin: 0; white-space: nowrap; }
   .bar .icons { margin-left: auto; display: flex; gap: 14px; }
   .icon-btn { background: none; border: 0; padding: 6px; cursor: pointer; color: var(--muted); border-radius: 6px; display: inline-flex; }
-  .icon-btn:hover { color: var(--ink); }
+  @media (hover: hover) and (pointer: fine) { .icon-btn:hover { color: var(--ink); } }
   nav.tabs { background: var(--white); border-bottom: 1px solid var(--line); }
   nav.tabs .inner { max-width: 1240px; margin: 0 auto; padding: 0 24px; display: flex; gap: 6px; overflow-x: auto; }
   nav.tabs a { padding: 20px 12px 18px; color: var(--muted); text-decoration: none; border-bottom: 3px solid transparent; white-space: nowrap; font-size: 16px; }
@@ -198,29 +203,64 @@
   dialog h3 { margin-top: 0; color: var(--ink); }
 
   @media (max-width: 900px) {
-    .row.r-1-2, .row.r-1-1 { grid-template-columns: 1fr; gap: 0; }
+    .row.r-1-2, .row.r-1-1 { grid-template-columns: minmax(0, 1fr); gap: 0; }
     .bar h1 { font-size: 20px; }
   }
+  @media (pointer: coarse) {
+    input, select, select.pill { font-size: 16px; }
+  }
   @media (max-width: 560px) {
-    .bar { padding: 0 16px; min-height: 64px; gap: 12px; }
+    .bar { padding: env(safe-area-inset-top, 0px) max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
+      min-height: calc(64px + env(safe-area-inset-top, 0px)); gap: 12px; }
     nav.tabs .inner, main { padding-left: 16px; padding-right: 16px; }
+    nav.tabs .inner { gap: 0; }
+    nav.tabs a { flex: 1 1 0; min-width: 0; padding-left: 4px; padding-right: 4px; font-size: 15px; text-align: center; }
+    .mtabs { gap: 0; }
+    .mtabs button { flex: 1 1 0; min-width: 0; padding-left: 8px; padding-right: 8px; font-size: 16px; }
+    section, .card, .panel, .chartbox, .form-grid > div { min-width: 0; }
+    .updated { font-size: 13px; min-height: 1.45em; }
+    .updated time { white-space: nowrap; }
     .card { padding: 18px 16px 20px; }
     .tablewrap { margin: 0 -16px -20px; }
-    .map { gap: 12px; }
+    .lvlbox { overflow-wrap: anywhere; }
+    #d-current { min-height: 78px; }
+    #d-current .big { width: 5ch; text-align: right; flex-shrink: 0; }
+    /* Keep the map and chart still as alerts arrive; longer lists scroll inside their reserved space. */
+    #d-alerts { height: 128px; overflow-y: auto; align-content: start; grid-auto-rows: max-content; scrollbar-gutter: stable; }
+    #d-alerts .lvlbox { min-height: 54px; }
+    #d-gate { min-height: 58px; }
+    #d-fc-alert { height: 160px; overflow-y: auto; scrollbar-gutter: stable; }
+    #d-fc-empty { min-height: 360px; }
+    #f-empty { min-height: 380px; }
+    .alertbar > svg, .reco > svg, .tile .seg svg, .check input { flex-shrink: 0; }
+    .map { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .tile { padding: 10px 10px 12px; }
-    .tile .pct { font-size: 18px; }
-    .tile .thead { flex-direction: column; align-items: flex-start; gap: 2px; margin-bottom: 8px; }
-    .grid8 { gap: 2px; }
-    .field input { min-width: 0; width: 100%; }
-    .field { flex: 1 1 100%; }
+    .tile .pct { font-size: 18px; display: inline-block; width: 5ch; height: 1em; }
+    .tile .thead { flex-direction: column; align-items: flex-start; gap: 2px; margin-bottom: 8px; height: 70px; }
+    .tile .thead > span { flex-shrink: 0; }
+    .tile .lv { display: block; }
+    .tile .ppl { min-height: 1.45em; }
+    .grid8 { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 2px; }
+    .grid8 i { min-width: 0; font-size: min(10px, 1.8vw); }
+    .grid8 .over { font-size: 12px; padding: 4px; overflow-y: auto; overflow-wrap: anywhere; }
+    .field input, .field select { min-width: 0; width: 100%; }
+    .field { flex: 1 1 100%; min-width: 0; }
     .panel .body { padding: 20px 16px; }
-    .commuter .zone { width: 100%; justify-content: center; }
+    .commuter { display: grid; grid-template-columns: 66px minmax(0, 1fr); grid-template-rows: minmax(180px, auto) 72px; gap: 16px; align-items: start; }
+    .commuter .txt { min-width: 0; overflow-wrap: anywhere; }
+    .commuter .zone { grid-column: 1 / -1; width: 100%; height: 72px; padding: 14px; gap: 8px; justify-content: center; white-space: normal; }
+    .commuter .zone .p { width: 5ch; text-align: center; }
+    .pill { white-space: normal; }
+    .actions > * { max-width: 100%; }
+    .exo { grid-template-columns: minmax(0, 1fr); }
+    .exo div.box, .reco > div { min-width: 0; overflow-wrap: anywhere; }
     .bar h1 { font-size: 17px; white-space: normal; }
     .bar .icons { gap: 2px; }
     .srow { flex-direction: column; gap: 0; }
-    .srow > span:last-child { padding-left: 17px; font-size: 14px; }
+    .srow > span:first-child { white-space: normal; overflow-wrap: anywhere; }
+    .srow > span:last-child { padding-left: 17px; font-size: 14px; min-height: 1.45em; }
   }
-  .srow > span:first-child { white-space: nowrap; }
+  @media (min-width: 561px) { .srow > span:first-child { white-space: nowrap; } }
 </style>
 </head>
 <body>
@@ -247,7 +287,7 @@
 </nav>
 
 <main>
-  <div class="updated" id="updated"><span class="dot"></span>Connecting…</div>
+  <div class="updated" id="updated"><span class="dot" id="updated-dot"></span><span id="updated-label">Connecting…</span><time id="updated-time"></time></div>
   <div class="notice" id="notice" hidden></div>
 
   <!-- ===================== DASHBOARD ===================== -->
@@ -427,6 +467,14 @@
 <script>
 (() => {
   const $ = id => document.getElementById(id);
+  const renderedHTML = new Map();
+  function setHTML(id, value) {
+    if (renderedHTML.get(id) === value) return;
+    $(id).innerHTML = value; renderedHTML.set(id, value);
+  }
+  function setText(id, value) {
+    if ($(id).textContent !== value) $(id).textContent = value;
+  }
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const SEGS = ["A", "B", "C", "D"];
   const SEGVAR = { A: "--seg-a", B: "--seg-b", C: "--seg-c", D: "--seg-d" };
@@ -478,7 +526,10 @@
     for (const t of o.xTicks) { if (o.vgrid) { g.beginPath(); g.moveTo(X(t.x) + .5, T); g.lineTo(X(t.x) + .5, T + ph); g.stroke(); } }
     g.strokeStyle = css("--line"); g.beginPath(); g.moveTo(L, T + ph + .5); g.lineTo(W - R, T + ph + .5); g.moveTo(L + .5, T); g.lineTo(L + .5, T + ph); g.stroke();
     g.textAlign = "center"; g.textBaseline = "top"; g.fillStyle = css("--muted");
-    for (const t of o.xTicks) g.fillText(t.label, Math.min(W - R - 18, Math.max(L + 18, X(t.x))), T + ph + 10);
+    const labelStep = window.innerWidth <= 560 && o.xTicks.length > 4 ? Math.ceil(o.xTicks.length / 3) : 1;
+    for (const [i, t] of o.xTicks.entries()) {
+      if (i % labelStep === 0) g.fillText(t.label, Math.min(W - R - 18, Math.max(L + 18, X(t.x))), T + ph + 10);
+    }
     g.save(); g.beginPath(); g.rect(L, T - 6, pw, ph + 12); g.clip();     // keep lines inside the plot
     for (const s of o.series) {
       if (!s.pts.length) continue;
@@ -530,45 +581,51 @@
   // ---------------------------------------------------------------- dashboard
   function renderState(s) {
     state = s;
-    document.title = `${s.station} | Station Command Dashboard`;
-    $("ver").textContent = "v" + s.version;
+    const title = `${s.station} | Station Command Dashboard`;
+    if (document.title !== title) document.title = title;
+    setText("ver", "v" + s.version);
     const d = parseT(s.now);
-    $("updated").innerHTML = `<span class="dot"></span>Last Updated: ${d.toLocaleDateString("en-CA")} ${d.toLocaleTimeString([], { hour12: false })} PHT`;
+    if ($("updated-dot").classList.contains("stale")) $("updated-dot").classList.remove("stale");
+    setText("updated-label", "Last Updated: ");
+    setText("updated-time", `${d.toLocaleDateString("en-CA")} ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })} PHT`);
     const notes = [];
     if (!s.clock_ok) notes.push("The hub's clock is wrong, so times are off. Fit the Pi 5 RTC battery or connect it to the internet once.");
     if (s.forecast_status.state === "error") notes.push("The forecast service reported an error: " + esc(s.forecast_status.message));
-    $("notice").hidden = !notes.length; $("notice").innerHTML = notes.join("<br>");
+    $("notice").hidden = !notes.length; setHTML("notice", notes.join("<br>"));
 
     const p = s.platform;
-    $("d-current").className = "lvlbox lv-" + p.level;
-    $("d-current").innerHTML = `<span>${LVNAME[p.level].toUpperCase()}</span><span class="big num">${pct(p.occupancy_pct)}</span>`;
-    $("d-reporting").textContent = `${s.segments.filter(g => g.occupancy_pct != null).length} of ${s.segments.length} segments reporting`;
+    const currentClass = "lvlbox lv-" + p.level;
+    if ($("d-current").className !== currentClass) $("d-current").className = currentClass;
+    setHTML("d-current", `<span>${LVNAME[p.level].toUpperCase()}</span><span class="big num">${pct(p.occupancy_pct)}</span>`);
+    setText("d-reporting", `${s.segments.filter(g => g.occupancy_pct != null).length} of ${s.segments.length} segments reporting`);
     const icon = k => k === "high" || k === "gate" ? "!" : k === "offline" ? "?" : "▲";
-    $("d-alerts").innerHTML = s.alerts.length
+    setHTML("d-alerts", s.alerts.length
       ? s.alerts.map(a => `<div class="lvlbox ${a.kind === "forecast" || a.kind === "offline" ? "lv-moderate" : "lv-high"}"><div>${esc(a.title)}<small>${esc(a.detail)}</small></div></div>`).join("")
-      : `<div class="lvlbox lv-low" style="justify-content:flex-start;gap:12px">${checkSvg()} NONE</div>`;
-    $("d-gate").innerHTML = s.gate.closed
+      : `<div class="lvlbox lv-low" style="justify-content:flex-start;gap:12px">${checkSvg()} NONE</div>`);
+    setHTML("d-gate", s.gate.closed
       ? `<div class="lvlbox lv-high"><span>CLOSED</span><span style="font-weight:400;font-size:14px">Entry on hold</span></div>`
-      : `<div class="lvlbox lv-low"><span>OPEN</span><span style="font-weight:400;font-size:14px">${s.settings ? "" : ""}</span></div>`;
+      : `<div class="lvlbox lv-low"><span>OPEN</span><span style="font-weight:400;font-size:14px">${s.settings ? "" : ""}</span></div>`);
 
     renderTiles(s);
-    $("d-sensors").innerHTML = s.segments.map(g => {
+    setHTML("d-sensors", s.segments.map(g => {
       const age = g.last_seen_s == null ? "never connected" : g.online ? (g.source === "live" ? "sending live frames" : "sending minute data")
         : `last data ${g.last_seen_s < 3600 ? Math.round(g.last_seen_s / 60) + " min" : Math.round(g.last_seen_s / 3600) + " h"} ago`;
       return `<div class="srow"><span><span class="sdot ${g.online ? "on" : ""}"></span>Seg ${g.id}<span class="muted" style="color:var(--muted)"> · ${esc(g.device || "unassigned")}</span></span><span style="color:var(--muted)">${g.device ? age : "assign in Settings"}</span></div>`;
-    }).join("");
+    }).join(""));
 
     // commuter message (what the OLED shows)
     const m = s.message, lang = s.settings.language;
-    $("c-primary").textContent = lang === "fil" ? m.fil : m.en;
-    $("c-secondary").textContent = lang === "fil" ? `(${m.en})` : `(${m.fil})`;
+    setText("c-primary", lang === "fil" ? m.fil : m.en);
+    setText("c-secondary", lang === "fil" ? `(${m.en})` : `(${m.fil})`);
     const rec = s.recommendation;
     $("c-zone").hidden = s.gate.closed || !rec;
     if (rec) {
       const lv = state.segments.find(g => g.id === rec.id)?.level || "unknown";
-      $("c-zone-name").textContent = `ZONE ${rec.id}`; $("c-zone-pct").textContent = pct(rec.now); $("c-zone-pct").className = "p num t-" + lv;
+      setText("c-zone-name", `ZONE ${rec.id}`); setText("c-zone-pct", pct(rec.now));
+      const zoneClass = "p num t-" + lv;
+      if ($("c-zone-pct").className !== zoneClass) $("c-zone-pct").className = zoneClass;
     }
-    $("help-levels").textContent = `Levels: Low below ${s.settings.moderate_at}%, Moderate from ${s.settings.moderate_at}%, High from ${s.settings.high_at}% of the floor occupied.`;
+    setText("help-levels", `Levels: Low below ${s.settings.moderate_at}%, Moderate from ${s.settings.moderate_at}%, High from ${s.settings.high_at}% of the floor occupied.`);
     drawDashChart();
   }
 
@@ -576,14 +633,14 @@
     if (!state || document.querySelector('[data-page="dashboard"]').hidden) return;
     const f = state.forecast, th = { moderate: state.settings.moderate_at, high: state.settings.high_at };
     const segs = f ? Object.keys(f.segments).filter(sg => f.segments[sg].points?.length).sort() : [];
-    $("d-legend").innerHTML = legendHTML(segs.map(sg => [`Seg ${sg}`, SEGVAR[sg]]));
+    setHTML("d-legend", legendHTML(segs.map(sg => [`Seg ${sg}`, SEGVAR[sg]])));
     const st = state.forecast_status || {};
     if (!segs.length) {
       $("d-chart").parentElement.hidden = true; $("d-fc-empty").hidden = false;
-      $("d-fc-empty").innerHTML = chartSvg() + (st.state === "collecting"
+      setHTML("d-fc-empty", chartSvg() + (st.state === "collecting"
         ? `Forecasts start after ${st.needed_days} days of sensor data. Collected so far: ${st.data_days} days.`
-        : st.stale ? "Forecast paused: waiting for recent data." : "Waiting for the first forecast run.");
-      $("d-fc-alert").innerHTML = ""; return;
+        : st.stale ? "Forecast paused: waiting for recent data." : "Waiting for the first forecast run."));
+      setHTML("d-fc-alert", ""); return;
     }
     $("d-chart").parentElement.hidden = false; $("d-fc-empty").hidden = true;
     const now = parseT(state.now).getTime();
@@ -598,8 +655,8 @@
     chart($("d-chart"), { x0, x1, y1: 100, yTicks: [0, 25, 50, 75, 100], bands: bandsFor(th), now, series, tipWindow: 4 * 60e3,
       xTicks: [[-15, "-15m"], [0, "Now"], [15, "+15m"], [30, "+30m"]].map(([m, l]) => ({ x: now + m * 60e3, label: l })) });
     const fa = state.alerts.filter(a => a.kind === "forecast" || a.kind === "high");
-    $("d-fc-alert").innerHTML = fa.map(a => `<div class="alertbar ${a.kind === "forecast" ? "" : ""}">${warnSvg("var(--high)")}<div><b>ALERT: ${esc(a.title)}</b><p>${esc(a.detail)}</p></div></div>`).join("") +
-      `<p class="note">Forecast by ${esc(f.model)}${state.forecast_status.updated ? `, updated ${esc(f.generated_at.slice(11, 16))}` : ""}. Shaded bands show the Low, Moderate and High ranges.</p>`;
+    setHTML("d-fc-alert", fa.map(a => `<div class="alertbar ${a.kind === "forecast" ? "" : ""}">${warnSvg("var(--high)")}<div><b>ALERT: ${esc(a.title)}</b><p>${esc(a.detail)}</p></div></div>`).join("") +
+      `<p class="note">Forecast by ${esc(f.model)}${state.forecast_status.updated ? `, updated ${esc(f.generated_at.slice(11, 16))}` : ""}. Shaded bands show the Low, Moderate and High ranges.</p>`);
   }
   attachTip($("d-chart"), t => { const m = Math.round((t - parseT(state.now).getTime()) / 60e3); return m === 0 ? "Now" : (m > 0 ? `+${m} min` : `${m} min`); });
 
@@ -619,11 +676,12 @@
     ensureTiles();
     for (const g of s.segments) {
       const lv = g.calibrating ? "unknown" : g.level;
-      $("tile-" + g.id).className = "tile lv-" + lv;
+      const tileClass = "tile lv-" + lv;
+      if ($("tile-" + g.id).className !== tileClass) $("tile-" + g.id).className = tileClass;
       const ic = lv === "low" ? checkSvg(18) : lv === "moderate" ? warnSvg("currentColor", 18) : lv === "high" ? bangSvg(18) : dashSvg(18);
-      $("tseg-" + g.id).innerHTML = `${ic}SEG ${g.id}`;
-      $("tpct-" + g.id).textContent = g.calibrating ? "" : pct(g.occupancy_pct);
-      $("tlv-" + g.id).textContent = g.occupancy_pct == null || g.calibrating ? "" : LVNAME[lv];
+      setHTML("tseg-" + g.id, `${ic}SEG ${g.id}`);
+      setText("tpct-" + g.id, g.calibrating ? "" : pct(g.occupancy_pct));
+      setText("tlv-" + g.id, g.occupancy_pct == null || g.calibrating ? "" : LVNAME[lv]);
     }
     drawGrids();
   }
@@ -636,12 +694,12 @@
       const f = g.device ? live[g.device] : null;
       const age = f ? (parseT(state.now) - parseT(f.t)) / 1000 : null;
       const fresh = f && age < 20;
-      if (!g.device) { over.hidden = false; over.textContent = "No sensor assigned. Set it in Settings."; }
-      else if (!f) { over.hidden = false; over.textContent = g.source === "minute" ? "Sensor sends minute summaries only (no live grid)" : "No data from " + g.device + ". Check the ESP32 is powered and on the CommuterDensity Wi-Fi."; }
-      else if (f.calibrating) { over.hidden = false; over.textContent = `Learning the empty floor: ${f.calib_progress} of 30 frames. Keep the area clear.`; }
-      else if (!fresh) { over.hidden = false; over.textContent = `No new frames for ${Math.round(age)} s`; }
+      if (!g.device) { over.hidden = false; setText(over.id, "No sensor assigned. Set it in Settings."); }
+      else if (!f) { over.hidden = false; setText(over.id, g.source === "minute" ? "Sensor sends minute summaries only (no live grid)" : "No data from " + g.device + ". Check the ESP32 is powered and on the CommuterDensity Wi-Fi."); }
+      else if (f.calibrating) { over.hidden = false; setText(over.id, `Learning the empty floor: ${f.calib_progress} of 30 frames. Keep the area clear.`); }
+      else if (!fresh) { over.hidden = false; setText(over.id, `No new frames for ${Math.round(age)} s`); }
       else over.hidden = true;
-      $("tage-" + g.id).textContent = fresh ? "live" : "";
+      setText("tage-" + g.id, fresh ? "live" : "");
       if (!f || !f.d) { [...grid.querySelectorAll("i")].forEach(c => { c.className = ""; c.style.background = ""; c.textContent = ""; }); continue; }
       const cells = grid.querySelectorAll("i"), bg = f.background, oc = occCol[g.calibrating ? "unknown" : g.level] || occCol.high;
       cells.forEach((c, i) => {
@@ -651,7 +709,8 @@
         const occ = f.occ && f.occ[i];
         c.className = occ ? "occ" : "";
         c.style.background = occ ? oc : h == null ? "" : shade(Math.min(h / 120, 1));
-        c.textContent = h == null ? Math.round(f.d[i] / 10) : Math.round(h);
+        const value = String(h == null ? Math.round(f.d[i] / 10) : Math.round(h));
+        if (c.textContent !== value) c.textContent = value;
       });
     }
   }
@@ -906,7 +965,10 @@
       if (streamConnected) return;
       renderSnapshot(s); startPolling();
     } catch (e) {
-      if (!streamConnected && !document.hidden) $("updated").innerHTML = `<span class="dot stale"></span>Hub unreachable. Check you're on the station Wi-Fi.`;
+      if (!streamConnected && !document.hidden) {
+        $("updated-dot").classList.add("stale");
+        setText("updated-label", "Hub unreachable. Check you're on the station Wi-Fi."); setText("updated-time", "");
+      }
     }
     refreshForecast();
   }
