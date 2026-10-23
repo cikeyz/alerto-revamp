@@ -296,3 +296,118 @@ a median of 79 ms in the node's own log in the node v1 section, or browser rende
 a median of 227 ms and p95 of 510 ms, skipping intermediate frames at the
 node's 2 Hz send rate. All three bench runs have no errors and a longest gap of 1.0 s between valid responses,
 below the 30 s fail-safe. That gap is not an isolated measurement of service downtime.
+
+## 2026-10-23: real node v2, password-protected wireless updates
+
+Result: **PASS, v2 retained on the node.** One real ESP32-S3 N16R8 and VL53L8CX node posts to
+the real Pi 5 gateway 1.2.1 over the same hotspot and LAN path as the v1 run. The node stays on USB
+as a recovery option, with its serial port closed throughout network acceptance.
+Sampling remains 4 Hz, sending remains 2 Hz, CPU stays at 80 MHz and TX power at 8.5 dBm.
+Payload shape, sequence assignment, Wi-Fi sleep off and non-blocking USB logging are unchanged.
+
+Arduino CLI 1.5.1 and ESP32 core 3.3.12 compile v2 with `--warnings more` and zero warnings.
+Flash use is **1,098,249 / 3,145,728 bytes**; static RAM is **57,096 / 327,680 bytes**.
+Builds with a missing password or a password shorter than 12 characters both fail compilation.
+The stock ESP32-S3 `esp32s3-libs/3.3.12/sdkconfig:424` contains
+`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`. Bootloader and partition table binaries match v1
+byte-for-byte; the existing two 3 MB app slots are retained.
+
+The initial v1 baseline rises from sequence 612 to 652 at **2.009394 POST attempts/s**.
+After verified USB upload and clean start, v2 rises from sequence 15 to 33 at **2.021294/s**
+before the authentication test. Authentication runs in a separate FreeRTOS task so password
+checks leave sampling and networking scheduled.
+
+- Wrong password: rejected, exit 1. During authentication, sequence 35 to 49 averages
+  **1.998133/s**; afterward, 51 to 95 averages
+  **2.000022/s**. The full 39.904 s window averages
+  **2.004802/s**, with no reset or stall over 3 s.
+- Correct password: upload exits 0. Live POSTs resume **21.986 s**
+  after push start, **6.443 s** after upload completion.
+  Before the push, sequence 130 to 150 averages **2.012136/s**;
+  after reboot, 77 to 117 averages **2.001713/s**.
+  Metadata selects app1 at `0x310000`, sequence 2, state VALID. Its full 1,098,400-byte readback
+  matches the pushed binary SHA-256, `aa28032b80fe20816b3370d514d5e43513222a7cd003ce07bf0a492506958f4a`.
+- Rollback: a throwaway build changes only the Pi URL to a closed TCP port and is never committed.
+  Its upload exits 0; the node sends no live POSTs until the five-minute no-success watchdog reboots it.
+  Live POSTs return **314.344 s** after upload completion.
+  Before the push, sequence 46 to 64 averages **2.017466/s**;
+  after recovery, 116 to 156 averages **2.002075/s**.
+  Metadata marks app0 sequence 3 ABORTED and retains app1 sequence 2 VALID. The recovered app1
+  readback matches the same v2 hash above. No serial connection or manual reset occurs during
+  the rollback wait. The gateway boot ID stays unchanged across both wireless-update tests.
+
+Native-USB stub readback fails on the large app with transfer errors. ROM-mode readback using
+`esptool --no-stub read-flash --flash-size 16MB` succeeds; each readback is followed by the
+DTR/RTS release and clean start used for v1. The port stays closed afterward.
+
+Final soak: **1799.943 seconds**, from `2026-10-23T18:17:19.614035+08:00` to `2026-10-23T18:47:19.652732+08:00`.
+All **180/180 ten-second samples** and **1801/1801 one-second watch reads** pass.
+Sequence rises from **74 to 3680**, averaging
+**2.003397 POST attempts/s**. No sequence reset, gateway boot change or stall over 3 s occurs.
+The largest gap between observed advancing Pi receive timestamps is **1502 ms**,
+a conservative bound on internal inter-frame gaps. Maximum observed frame age is **28 ms**;
+the largest watch fetch interval is **1.077 s**.
+
+`latency_probe.py --stream --duration 60`:
+
+```text
+stream; responses=121; errors=none; frames shown=121; frames lost=0; resets=0; frame_to_screen_ms min=2 / median=2 / p95=9 / max=18 (n=120); age_at_fetch_ms min=2 / median=2 / p95=10 / max=110; stream connections=1
+```
+
+The stream CSV contains **121 frames**, sequences
+**3683 through 3803**, with
+**0 missing sequences (0.000% gaps)**.
+
+`fake_bench.py --duration 30`:
+
+```text
+polls=30; valid=30; errors=none; response_ms median=18.7 / p95=41.8 / max=57.0; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.1, 'closed')]
+```
+
+Stream timing ends at the gateway's SSE `sent_ms`; sensor acquisition, Wi-Fi transit and browser
+rendering remain outside that metric. Internal POST-failure and brownout logs are not captured
+because serial stays closed. A failed transfer after authentication, an OTA transfer longer than five
+minutes, power loss during an update and sensor failure are not fault-injected. Mounted operation
+on the USB adapter remains unverified. Gateway code, services, calibration,
+hotspot and firewall settings are unchanged.
+
+### v2 hardening: placeholder-password guard, bounded boot sensor retries, HTTP 200 validation
+
+The example OTA password is rejected at build time, boot-time sensor retries reboot after
+the existing five-minute budget, and image validation now shares the HTTP 200 success condition.
+Setup order and Wi-Fi startup are unchanged. The README records password visibility in the
+Pi process list. The fixed build uses **1,098,249 / 3,145,728 bytes**, with **zero warnings**;
+the example password and an 11-character password both fail their static assertions.
+
+- Fixed OTA: upload exits 0; first POST returns **25.497 s**
+  from push start (**6.378 s** after upload). The pre/post
+  sequence rates are **2.017979 / 2.011817 Hz**.
+  After more than 60 s of normal posting, app0 at `0x10000`, sequence 3, is VALID;
+  its full **1,098,400-byte** readback matches the pushed SHA-256 `4cc0aae9d217c2e12fc6cb08ae11324648e874d7286c2fcdbfe2ec848b3a7a8e`.
+- Swapped-I2C throwaway image: upload exits 0 and no POST arrives until automatic recovery.
+  The first POST returns **329.527 s** from push start,
+  **310.244 s** after upload. Pre/post rates are
+  **2.008669 / 1.999926 Hz**. Metadata shows app1 sequence 4
+  ABORTED, app0 sequence 3 VALID, and the app0 readback retains the same fixed hash.
+- Final closed-port watch: **599.956 s**, **60/60 primary samples**,
+  **601/601 watch reads**, **2.005147 Hz**, largest observed receive gap
+  **1511 ms**, no reset or stall over 3 s. The 60 s stream shows
+  **121 frames**, **0 missing sequences**. Exact stream and bench output:
+
+```text
+stream; responses=121; errors=none; frames shown=121; frames lost=0; resets=0; frame_to_screen_ms min=1 / median=2 / p95=10 / max=79 (n=120); age_at_fetch_ms min=1 / median=2 / p95=10 / max=341; stream connections=1
+polls=30; valid=30; errors=none; response_ms median=14.3 / p95=28.7 / max=30.7; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'closed')]
+```
+
+ICMP brackets initial reboot/network loss at **19.128-19.501 s**
+from the fixed push start and **19.292-19.768 s** from the fixture push start.
+After rollback, Wi-Fi responds **328.839 s** from push start
+(**309.557 s** after upload). Exact CPU reset and bootloader-switch instants are
+unobserved with serial closed. Each readback is followed by the required clean start.
+
+Known limitation: the OTA onStart pause wait remains unbounded. espota waits 10 s for the node
+to connect back; if an in-flight POST delays the start past that window, the push fails and
+must be retried. The connection failure reaches onError and the node resumes normal operation.
+Both measured correct-password pushes succeed. The timeout path is source-inspected, not
+fault-injected. Gateway code, services, calibration,
+hotspot, firewall and environment remain unchanged. Mounted operation and power-loss recovery remain untested.

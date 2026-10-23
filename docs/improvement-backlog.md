@@ -75,6 +75,11 @@ Ordered by expected impact. Each item gets its own commit or PR with a before/af
     systemd units. `/etc/commuter-density.env` holds the device key, admin PIN and hotspot password, so it is
     backed up privately and never committed.
 
+11. **Wireless node updates while mounted.** Done (node v2): password-protected ArduinoOTA, a required
+    12-character minimum at build time, paused ranging/POSTs/watchdogs during transfers, and rollback
+    until the first successful Pi POST. Wrong-password continuity, a real wireless update, automatic
+    rollback from a wrong-URL image, slot readbacks and a 30-minute closed-port soak pass.
+
 ## Software: consistency and reliability
 
 Found in a second pass. These make the system show or act on the wrong state, which matters as much as raw
@@ -124,6 +129,11 @@ speed.
 - A sensor failure at boot blocks networking forever.
 - The reboot reason can be lost; persist it across reboot.
 - Run a multi-hour soak with heap and stack figures and fault tests (hotspot off/on, gateway down).
+- After the defense, check `esp_ota_get_state_partition()` for `ESP_OTA_IMG_PENDING_VERIFY` before
+  calling image validation, and stop calling once the image is not pending. Today the validation call
+  repeats on every HTTP 200 when it does not return `ESP_OK`, including when the running image is not
+  pending verification, such as just after a USB flash with blank otadata. This is harmless: an otadata
+  read and a UART0 log line per POST, so it stays unchanged before the defense.
 
 ## Found in the 2026-10-22 read-only scans (after the defense)
 

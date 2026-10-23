@@ -24,7 +24,7 @@ VL53L8CX ─ ESP32-S3 node (Node ID) ──Wi-Fi──▶ Raspberry Pi gateway �
 
 ## Revamp
 
-- Gateway 1.2.1 and node firmware v1 run on the real Raspberry Pi and node.
+- Gateway 1.2.1 and node firmware v2 run on the real Raspberry Pi and node.
 - [Latency measurements](docs/latency-log.md)
 - [Turnstile bench contract](docs/bench-contract.md)
 - [Improvement backlog](docs/improvement-backlog.md)
@@ -64,8 +64,9 @@ VL53L8CX ─ ESP32-S3 node (Node ID) ──Wi-Fi──▶ Raspberry Pi gateway �
 
 ## (a) ESP32-S3 sensor node
 
-**Deployment status (2026-10-22):** V1 with non-blocking USB logging passes a 30-minute
-closed-port soak on the real Pi, followed by the stream and display probes, and remains on the node.
+**Deployment status (2026-10-23):** Node firmware v2 now runs on the node, installed over USB
+on 2026-10-23, then updated over Wi-Fi. V1 with non-blocking USB logging passes a 30-minute
+closed-port soak on the real Pi, followed by the stream and display probes.
 The two earlier candidates were rolled back to v0. See `docs/latency-log.md` for the measured
 results, USB logging rule, rollback history and safe serial detach.
 
@@ -88,7 +89,7 @@ results, USB logging rule, rollback history and safe serial detach.
   USB CDC On Boot = **Enabled**, Arduino Runs On = **Core 1**, Events Run On = **Core 1**,
   Upload Mode = **UART0 / Hardware CDC**, Upload Speed = **921600**, Erase All Flash = **Disabled**.
 - Copy `esp32_tof_reader/secrets.example.h` to `esp32_tof_reader/secrets.h`, then set
-  `WIFI_SSID`, `WIFI_PASS`, `NODE_KEY` and `NODE_ID` there. The local header is gitignored.
+  `WIFI_SSID`, `WIFI_PASS`, `NODE_KEY`, `NODE_ID` and `OTA_PASSWORD` there. The local header is gitignored.
   Use an empty password for an open hotspot. `NODE_ID` is unique per node (`platform-A` to
   `platform-D`); `NODE_KEY` must match the Pi's `DEVICE_KEY`.
 - Samples **8x8 at 4 Hz**, autonomous mode, **10 ms integration**, I2C **400 kHz**.
@@ -101,7 +102,9 @@ results, USB logging rule, rollback history and safe serial detach.
 - Startup probes **0x29** directly and runs a full diagnostic scan only if that probe fails.
   Sensor initialization precedes Wi-Fi; ranging starts afterward. The sensor restarts after
   **3 seconds without frames**, at most once per **10 seconds**. The node logs a reason and reboots
-  after **5 minutes without a successful POST**.
+  after **5 minutes without a successful POST**; boot-time sensor retries share the same
+  **5-minute budget** and then reboot, so a newly installed image that cannot start the sensor
+  is rolled back to the previous image.
 - Power up with the area under the sensor empty; the gateway learns the empty floor from the first ~30 frames.
 - Native USB Serial/JTAG logs at **115200 baud** include timestamps and the reset reason, including brownout.
   Type `g` for the **8x8 grid in cm**, `v` to toggle the once-per-second status line.
@@ -118,6 +121,40 @@ Build FQBN used for the real node:
 ```text
 esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,CPUFreq=80,FlashMode=dio,FlashSize=16M,PartitionScheme=app3M_fat9M_16MB,PSRAM=disabled,LoopCore=1,EventsCore=1,EraseFlash=none
 ```
+
+### Wireless update
+
+Install v2 once over USB. Later updates use ArduinoOTA from ESP32 core 3.3.12 and the two existing
+3 MB app slots. Set a unique `OTA_PASSWORD` of at least 12 characters in `secrets.h`; missing or
+short or example-placeholder passwords fail compilation. Keep the same password for subsequent builds.
+The hostname is `alerto-<NODE_ID>.local`, for example `alerto-platform-A.local`.
+
+Push from the Pi because the node must connect back to the sender on its hotspot. Set the local
+`PI_HOST` environment variable to the Pi's existing, trusted SSH hostname or LAN address, and set
+`ESP32_CORE` and `NODE_BIN` to the installed core directory and compiled sketch `.bin` file.
+Copy the core's unmodified `tools/espota.py` and the app binary into the Pi's home directory:
+
+```powershell
+ssh -o BatchMode=yes "admin@$env:PI_HOST" 'mkdir -p ~/alerto-ota'
+scp "$env:ESP32_CORE\tools\espota.py" "$env:NODE_BIN" "admin@$($env:PI_HOST):alerto-ota/"
+ssh -o BatchMode=yes "admin@$env:PI_HOST" 'ip neigh show dev wlan0'
+[Environment]::GetEnvironmentVariable('ALERTO_OTA_PASSWORD', 'User') | ssh -o BatchMode=yes "admin@$env:PI_HOST" 'read -r pw; pw=${pw%$(printf "\r")}; python3 ~/alerto-ota/espota.py -i alerto-platform-A.local -I 10.42.0.1 -P 3233 -f ~/alerto-ota/esp32_tof_reader.ino.bin -a "$pw"'
+```
+
+Store the matching password in the Windows user environment variable `ALERTO_OTA_PASSWORD` before
+running the push command. If mDNS is unavailable, replace the node hostname with its hotspot address
+from `ip neigh`. The node listens on UDP 3232 and connects back to Pi TCP 3233; if that connection is
+blocked, stop and check the network policy before changing any firewall or hotspot settings.
+Do not enable espota debug output, which prints its authentication options.
+During a push, espota.py takes the password as `-a`, making it visible in the Pi's process list, so push only from a Pi account nobody else uses.
+
+Authentication runs in a separate task so password checks leave sampling and POSTs scheduled.
+Ranging and POSTs pause during the transfer, and both network watchdogs exclude that pause.
+A rejected password leaves normal operation running; transfer errors resume ranging and POSTs
+without a reboot. A successful transfer reboots into the other app slot. With the core 3.3.12
+rollback-enabled bootloader, the new image becomes valid only after its first HTTP 200 POST to
+the Pi. If no POST succeeds, the existing five-minute watchdog reboots and restores the previous
+image. Keep the previous working USB build available for recovery.
 
 ---
 
