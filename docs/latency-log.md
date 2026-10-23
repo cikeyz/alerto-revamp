@@ -523,3 +523,48 @@ the live-sequence check now waits for that frame. Both earlier 90 s bench window
 its deploy and rollback restarts. Immediate rollback checks record 29/30; settled rollback checks pass
 30/30, with 121 stream frames and zero lost. A separate steady-state bench passes 60/60.
 The accepted restart window does not guarantee zero missed polls at every restart phase.
+
+## 2026-10-24: gateway 1.2.4 deployed with optional station and line names
+
+Gateway **1.2.4** from merged main `4be367f` runs on the Pi with node firmware v2.
+The deploy installs `rpi/app.py`, `rpi/settings.py` and `rpi/static/index.html`;
+source, staging and installed hashes agree. `frames.py` keeps its previous hash and file identity.
+`density-web` restarts at **06:47:05 PHT (UTC+08:00)**. Both services remain active;
+the forecast process and activation time are unchanged. The laptop uses `http://PI_LAN_ADDRESS`
+with `Host: 10.42.0.1`.
+
+Before deployment, installed gateway 1.2.3 hashes match the recorded release; the current
+`settings.py` hash is captured with the rollback copy. Platform A posts at
+**2.008399 Hz** before restart and **2.008435 Hz** afterward
+(seq 8380 to 8390).
+
+Baseline, 20 s; bench across restart, 90 s; stream after restart, 60 s:
+
+```text
+polls=20; valid=20; errors=none; response_ms median=8.0 / p95=34.4 / max=47.4; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'closed')]
+polls=90; valid=90; errors=none; response_ms median=7.3 / p95=27.4 / max=38.2; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'closed')]
+stream; responses=122; errors=none; frames shown=122; frames lost=0; resets=0; frame_to_screen_ms min=2 / median=3 / p95=11 / max=197 (n=121); age_at_fetch_ms min=2 / median=3 / p95=12 / max=455; stream connections=1
+```
+
+All 90 polls are valid, with a longest valid-response gap of **1.0 s**. The restart follows
+a completed valid poll with the existing one-second cadence and 250 ms timeout.
+The gap is not a measurement of service downtime. Stream latency ends at SSE `sent_ms`;
+sensor acquisition, Wi-Fi transit and browser rendering remain outside that metric.
+The `/api/display` key set, types and **165-byte** body length match the live 1.2.3 capture,
+including after the names are cleared. `Content-Length` matches the body.
+
+After restart acceptance, the normal Settings API clears only `station_name` and `line_name`.
+Both saved values and `/api/state` names are empty. Moderate/High thresholds stay **25/50%**;
+`gate_enabled=true`, `language=fil`, all four segment mappings, `active_model=auto`,
+the 15-minute forecast lead, 10-second fallback refresh and 90-day retention are unchanged.
+
+All four live captures are checked: Dashboard at **1440 px** and **393 px**, the **393 px heights
+dialog**, and Settings at **393 px**. The title is exactly **Station Command Dashboard** and
+the station/line header label is hidden. Opening Seg A's 64-cell dialog leaves every tile's
+position and dimensions unchanged in the fixed viewport. The dialog fits within the viewport.
+The thresholds table has **three visible columns** with **344 px** client and scroll widths,
+and its wrapper has the same widths, so it has no horizontal scroll. Phone pages have no
+horizontal overflow; all footers show **v1.2.4**. The journal since restart has **zero tracebacks**.
+
+The node remains on a desk with its saved hallway background, reading **92.2%**, as expected.
+Calibration and node firmware remain unchanged; this is not a defense-venue accuracy check.

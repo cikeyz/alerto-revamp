@@ -24,7 +24,7 @@ VL53L8CX ─ ESP32-S3 node (Node ID) ──Wi-Fi──▶ Raspberry Pi gateway �
 
 ## Revamp
 
-- Gateway 1.2.3 and node firmware v2 run on the real Raspberry Pi and node.
+- Gateway 1.2.4 and node firmware v2 run on the real Raspberry Pi and node.
 - [Latency measurements](docs/latency-log.md)
 - [Turnstile bench contract](docs/bench-contract.md)
 - [Improvement backlog](docs/improvement-backlog.md)
@@ -159,6 +159,8 @@ image. Keep the previous working USB build available for recovery.
 ---
 
 ## (b) Raspberry Pi gateway
+
+Station and line names are optional in Settings and hidden on the dashboard when blank.
 
 **Install** (Raspberry Pi 5, Raspberry Pi OS 64-bit, Ethernet connected for the first install):
 ```

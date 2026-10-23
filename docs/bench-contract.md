@@ -79,6 +79,7 @@ It prints valid polls, errors by kind, response time and the longest gap between
 | 2026-10-22 | 1.2.1 deploy | running Pi over LAN, across the `density-web` restart | `polls=90; valid=90; errors=none; response_ms median=19.1 / p95=29.9 / max=31.0; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]` |
 | 2026-10-22 | 1.2.1 deploy | running Pi over LAN, after restart | `polls=60; valid=60; errors=none; response_ms median=6.0 / p95=28.1 / max=30.2; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'open')]` |
 | 2026-10-24 | 1.2.3 deploy | running Pi over LAN, accepted `density-web` restart window; earlier attempts rolled back | `polls=90; valid=90; errors=none; response_ms median=22.0 / p95=31.9 / max=36.5; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'closed')]` |
+| 2026-10-24 | 1.2.4 deploy | running Pi over LAN, across the `density-web` restart; node firmware v2 | `polls=90; valid=90; errors=none; response_ms median=7.3 / p95=27.4 / max=38.2; longest_gap_s=1.0 (fail-safe at 30); gate changes=[(0.0, 'closed')]` |
 
 The 1.1.0 run shows the gate closing and reopening within about a second on live data from one node: the
 unsmoothed gate input (improvement backlog C3). The bench would show a one-second Hold.
