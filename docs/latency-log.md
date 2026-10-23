@@ -423,7 +423,8 @@ and the `/api/display` format are unchanged.
 
 Offline replay uses 299 EMPTY frames and 159 WALK frames with their recorded background.
 The fixed WALK labels identify 57 frames with at least one occupied return reaching 900 mm;
-these are a sensing proxy, not an independent position log. Results:
+the 57/57 retention excludes frames whose highest person return is 400 mm to below 900 mm.
+These are a sensing proxy, not an independent position log. Results:
 
 - EMPTY false frames: **69/299 to 0/299**. The 75 false zone hits measure **445-578 mm**.
   There are 64 per-zone runs, 56 lasting one frame. Most hits stand alone, but three components

@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 import store
 
 HEIGHT_THRESHOLD_MM = float(os.environ.get("HEIGHT_THRESHOLD_MM", 400))
-MIN_PEAK_MM = float(os.environ.get("MIN_PEAK_MM", 700))
+MIN_PEAK_MM = float(os.environ.get("MIN_PEAK_MM") or 700)
 ZONES_PER_PERSON = float(os.environ.get("ZONES_PER_PERSON", 3.0))
 MIN_BLOB_ZONES = int(os.environ.get("MIN_BLOB_ZONES", 2))
 CALIB_FRAMES = int(os.environ.get("CALIB_FRAMES", 30))

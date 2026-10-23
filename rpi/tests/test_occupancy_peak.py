@@ -1,6 +1,9 @@
 """Component peaks reject low returns without erasing connected body edges."""
 from datetime import datetime
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -28,6 +31,19 @@ class OccupancyPeakTest(unittest.TestCase):
         distances = [2500 - heights.get(i, 0) for i in range(64)]
         self.sensor.process(distances, statuses or [5] * 64, self.now, None, 123, 7)
         return self.sensor.last
+
+    def test_empty_peak_environment_falls_back_to_default(self):
+        result = subprocess.run(
+            [sys.executable, "-B", "-c",
+             "import importlib, os, frames; os.environ['MIN_PEAK_MM'] = ''; "
+             "print(importlib.reload(frames).MIN_PEAK_MM)"],
+            cwd=Path(frames.__file__).resolve().parent,
+            env={**os.environ, "MIN_PEAK_MM": "700"},
+            capture_output=True, text=True, timeout=10,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "700.0")
 
     def test_isolated_low_blip_is_ignored(self):
         last = self.process({40: 578})

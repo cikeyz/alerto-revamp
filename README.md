@@ -179,6 +179,9 @@ zones that share an edge. A group counts toward occupancy only if its highest re
 zones attached to a taller body return. A single tall zone still counts toward occupancy.
 Background drift uses the original, unfiltered zone mask. Set `MIN_PEAK_MM=0` to restore the
 previous rule; calibration files and the `/api/display` response format stay the same.
+Set `MIN_PEAK_MM="700"` in `/etc/commuter-density.env` on the Pi, then restart `density-web`
+with `sudo systemctl restart density-web`. Re-running `setup.sh` keeps the existing env file
+unless `--reset-config` is supplied.
 
 ### Communication and message format (summary)
 ⏳ A full protocol document is not yet done. Current messages:
