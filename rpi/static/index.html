@@ -220,10 +220,11 @@
     .mtabs button { flex: 1 1 0; min-width: 0; padding-left: 8px; padding-right: 8px; font-size: 16px; }
     section, .card, .panel, .chartbox, .form-grid > div { min-width: 0; }
     .updated { font-size: 13px; min-height: 1.45em; }
-    .updated time { white-space: nowrap; }
+    .updated #updated-time { white-space: nowrap; }
     .card { padding: 18px 16px 20px; }
     .tablewrap { margin: 0 -16px -20px; }
-    .scroll-hint { display: block; margin-top: 4px; color: var(--muted); font-size: 13px; font-weight: 400; }
+    .scroll-hint { display: block; margin: 4px 0 8px; color: var(--muted); font-size: 13px; font-weight: 400; }
+    .panel > .scroll-hint { margin-left: 24px; margin-right: 24px; }
     .lvlbox { overflow-wrap: anywhere; }
     #d-current { min-height: 78px; }
     #d-current .big { width: 5ch; text-align: right; flex-shrink: 0; }
@@ -242,7 +243,9 @@
     .tile .lv { display: block; }
     .tile .ppl { min-height: 1.45em; }
     .grid8 { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 2px; }
-    .grid8 i { min-width: 0; font-size: min(10px, 1.8vw); }
+    .grid8 i { min-width: 0; font-size: clamp(9px, 2.4vw, 10px); }
+    .grid8.nums { gap: 1px; margin: 0 -7px; }
+    .lv-low .grid8.nums i.occ, .lv-moderate .grid8.nums i.occ { color: var(--ink); }
     .grid8 .over { font-size: 12px; padding: 4px; overflow-y: auto; overflow-wrap: anywhere; }
     .field input, .field select { min-width: 0; width: 100%; }
     .field { flex: 1 1 100%; min-width: 0; }
@@ -288,7 +291,7 @@
 </nav>
 
 <main>
-  <div class="updated" id="updated"><span class="dot" id="updated-dot"></span><span id="updated-label">Connecting…</span><time id="updated-time"></time></div>
+  <div class="updated" id="updated"><span class="dot" id="updated-dot"></span><span id="updated-label">Connecting…</span><span id="updated-time"></span></div>
   <div class="notice" id="notice" hidden></div>
 
   <!-- ===================== DASHBOARD ===================== -->
@@ -351,6 +354,7 @@
     </div>
     <div class="card">
       <h2>Daily Peak Density by Segment</h2>
+      <small class="scroll-hint" id="h-table-hint" hidden>Swipe to see all columns</small>
       <div class="tablewrap"><table class="grid" id="h-table"></table></div>
     </div>
     <div class="card">
@@ -387,6 +391,7 @@
     <div class="row r-1-1">
       <div class="card">
         <h2>Baseline Comparison</h2>
+        <small class="scroll-hint" id="f-base-hint" hidden>Swipe to see all columns</small>
         <div class="tablewrap" style="margin:0"><table class="plain" id="f-base"></table></div>
       </div>
       <div class="card">
@@ -408,7 +413,8 @@
       <p>Manage density thresholds and global system preferences.</p>
     </div>
     <div class="panel">
-      <h3>Density Thresholds<small class="scroll-hint">Swipe to see all columns</small></h3>
+      <h3>Density Thresholds</h3>
+      <small class="scroll-hint" id="s-thr-hint" hidden>Swipe to see all columns</small>
       <div class="tablewrap" style="margin:0"><table class="plain" id="s-thr"></table></div>
     </div>
     <div class="panel">
@@ -475,6 +481,11 @@
   }
   function setText(id, value) {
     if ($(id).textContent !== value) $(id).textContent = value;
+  }
+  function updateScrollHint(id) {
+    const wrap = $(id).parentElement, hint = $(id + "-hint");
+    const hidden = wrap.scrollWidth <= wrap.clientWidth;
+    if (hint.hidden !== hidden) hint.hidden = hidden;
   }
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const SEGS = ["A", "B", "C", "D"];
@@ -669,6 +680,7 @@
         <div class="thead"><span class="seg" id="tseg-${sg}">SEG ${sg}</span><span><span class="pct num" id="tpct-${sg}">—</span> <span class="lv" id="tlv-${sg}"></span></span></div>
         <div class="grid8" id="grid-${sg}" role="img" aria-label="Seg ${sg} overhead view">${"<i></i>".repeat(64)}<div class="over" id="over-${sg}">No data</div></div>
         <div class="ppl"><span id="tage-${sg}"></span></div></div>`).join("");
+    $("d-map").querySelectorAll("[id]").forEach(el => renderedHTML.delete(el.id));
     SEGS.forEach(sg => $("grid-" + sg).addEventListener("click", () => {
       showNums = !showNums; SEGS.forEach(x => $("grid-" + x).classList.toggle("nums", showNums));
     }));
@@ -762,6 +774,7 @@
       const c = d.segments[sg]; return c ? `<td class="c-${c.level} num" title="Peak at ${c.t}">${pct(c.peak)}</td>` : `<td>—</td>`; }).join("")}
       <td class="sep"><b class="t-${d.overall.level} num">${pct(d.overall.peak)}</b><span class="muted">(Seg ${d.overall.seg}, ${d.overall.t})</span></td></tr>`).join("");
     $("h-table").innerHTML = days.length ? head + body : head + `<tr><td colspan="${segs.length + 2}" style="color:var(--muted)">No data in this range.</td></tr>`;
+    updateScrollHint("h-table");
     $("h-acc").innerHTML = accuracyTable(h.metrics, h.best_model, h.fitted_at);
   }
   attachTip($("h-chart"), i => ($("h-chart")._label || (() => ""))(i));
@@ -810,6 +823,7 @@
       $("f-inuse").innerHTML = ""; $("f-metrics").innerHTML = `<p class="empty" style="grid-column:1/-1">${msg}</p>`;
       $("f-chart").parentElement.hidden = true; $("f-empty").hidden = false; $("f-empty").innerHTML = chartSvg() + msg;
       $("f-legend").innerHTML = ""; $("f-base").innerHTML = ""; $("f-reco").innerHTML = `<p class="empty">${msg}</p>`; $("f-updated").textContent = "";
+      updateScrollHint("f-base");
       return;
     }
     $("f-inuse").innerHTML = model === f.active_model ? `<span class="inuse">In use on the dashboard${f.auto ? " (automatic: most accurate)" : ""}</span>` : "";
@@ -855,6 +869,7 @@
       return `<tr class="${a ? "active" : ""}"><td>${k}${a ? " (Active)" : ""}</td><td class="num">${mm.MAPE == null ? "—" : fx(mm.MAPE) + "%"}</td><td class="num">${fx(mm.RMSE)}</td><td>${a ? "Deployed" : k === f.best_model ? "Most accurate" : st}</td></tr>`;
     }).join("");
 
+    updateScrollHint("f-base");
     const lc = f.least_crowded;
     $("f-reco").innerHTML = lc ? `<div class="reco">${checkSvg(32)}<div><b>Next 5-min interval: Zone ${lc.id} (Seg ${lc.id})</b><span class="t-${lc.level}">${pct(lc.v)} predicted occupancy</span></div></div>
       <div class="quote"><b>Inirerekomenda: Zone ${lc.id}.</b><i>(Recommended: Zone ${lc.id}.)</i></div>
@@ -881,6 +896,7 @@
       <td style="text-align:right">${key ? `<button class="btn secondary small" data-edit="${key}">Edit</button>` : ""}</td></tr>`;
     $("s-thr").innerHTML = `<tr><th>Level</th><th>Threshold (% of floor occupied)</th><th>Dashboard preview</th><th style="text-align:right">Action</th></tr>` +
       row("Low", `0 – ${s.moderate_at - 1}`, "low", null) + row("Moderate", `${s.moderate_at} – ${s.high_at - 1}`, "moderate", "moderate_at") + row("High", `${s.high_at}+`, "high", "high_at");
+    updateScrollHint("s-thr");
   }
   $("s-thr").addEventListener("click", e => {
     const b = e.target.closest("[data-edit]"); if (!b) return;
@@ -985,7 +1001,7 @@
     if (latestSnapshot) renderSnapshot(latestSnapshot);
     startPolling(); refresh(); loadLive();
   });
-  window.addEventListener("resize", () => { if (!document.hidden) { drawDashChart(); renderHistory(); renderForecast(); } });
+  window.addEventListener("resize", () => { if (!document.hidden) { drawDashChart(); renderHistory(); renderForecast(); updateScrollHint("s-thr"); } });
   initDates();
   showTab(location.hash.slice(1) || "dashboard");
   startPolling(); refresh(); loadLive(); connectStream();
