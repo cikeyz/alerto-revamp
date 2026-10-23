@@ -28,7 +28,6 @@
   header.top { background: var(--white); border-bottom: 1px solid var(--line); }
   .bar { max-width: 1240px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; gap: 18px; min-height: 76px; }
   .bar h1 { font-size: 24px; font-weight: 700; color: var(--ink); margin: 0; white-space: nowrap; }
-  .bar .where { color: var(--muted); padding-left: 18px; border-left: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .bar .icons { margin-left: auto; display: flex; gap: 14px; }
   .icon-btn { background: none; border: 0; padding: 6px; cursor: pointer; color: var(--muted); border-radius: 6px; display: inline-flex; }
   .icon-btn:hover { color: var(--ink); }
@@ -204,7 +203,6 @@
   }
   @media (max-width: 560px) {
     .bar { padding: 0 16px; min-height: 64px; gap: 12px; }
-    .bar .where { display: none; }
     nav.tabs .inner, main { padding-left: 16px; padding-right: 16px; }
     .card { padding: 18px 16px 20px; }
     .tablewrap { margin: 0 -16px -20px; }
@@ -212,7 +210,6 @@
     .tile { padding: 10px 10px 12px; }
     .tile .pct { font-size: 18px; }
     .tile .thead { flex-direction: column; align-items: flex-start; gap: 2px; margin-bottom: 8px; }
-    .tile .ppl span:last-child { display: none; }
     .grid8 { gap: 2px; }
     .field input { min-width: 0; width: 100%; }
     .field { flex: 1 1 100%; }
@@ -230,7 +227,6 @@
 <header class="top">
   <div class="bar">
     <h1>Station Command Dashboard</h1>
-    <span class="where" id="where">Line 1 | Central Station</span>
     <div class="icons">
       <button class="icon-btn" id="go-settings" aria-label="Settings" title="Settings">
         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -270,7 +266,7 @@
       <div class="card">
         <h2>Platform Density Map</h2>
         <div class="map" id="d-map"></div>
-        <p class="note" style="margin-top:12px">Live view from each ceiling sensor, seen from above. Coloured squares are people; grey shading shows height above the floor. Tap a grid to show heights in cm.</p>
+        <p class="note" style="margin-top:12px">Live view from each ceiling sensor, seen from above. Coloured squares are occupied zones; grey shading shows height above the floor. Tap a grid to show heights in cm.</p>
         <div class="sensors">
           <div class="label">Sensors</div>
           <div id="d-sensors"></div>
@@ -534,7 +530,6 @@
   // ---------------------------------------------------------------- dashboard
   function renderState(s) {
     state = s;
-    $("where").textContent = `${s.line} | ${s.station}`;
     document.title = `${s.station} | Station Command Dashboard`;
     $("ver").textContent = "v" + s.version;
     const d = parseT(s.now);
@@ -615,7 +610,7 @@
     $("d-map").innerHTML = SEGS.map(sg => `<div class="tile lv-unknown" id="tile-${sg}">
         <div class="thead"><span class="seg" id="tseg-${sg}">SEG ${sg}</span><span><span class="pct num" id="tpct-${sg}">—</span> <span class="lv" id="tlv-${sg}"></span></span></div>
         <div class="grid8" id="grid-${sg}" role="img" aria-label="Seg ${sg} overhead view">${"<i></i>".repeat(64)}<div class="over" id="over-${sg}">No data</div></div>
-        <div class="ppl"><span id="tppl-${sg}"></span><span id="tage-${sg}"></span></div></div>`).join("");
+        <div class="ppl"><span id="tage-${sg}"></span></div></div>`).join("");
     SEGS.forEach(sg => $("grid-" + sg).addEventListener("click", () => {
       showNums = !showNums; SEGS.forEach(x => $("grid-" + x).classList.toggle("nums", showNums));
     }));
@@ -629,7 +624,6 @@
       $("tseg-" + g.id).innerHTML = `${ic}SEG ${g.id}`;
       $("tpct-" + g.id).textContent = g.calibrating ? "" : pct(g.occupancy_pct);
       $("tlv-" + g.id).textContent = g.occupancy_pct == null || g.calibrating ? "" : LVNAME[lv];
-      $("tppl-" + g.id).textContent = g.people != null && !g.calibrating ? `≈ ${Math.round(g.people)} ${Math.round(g.people) === 1 ? "person" : "people"} in view` : "";
     }
     drawGrids();
   }
